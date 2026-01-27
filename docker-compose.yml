@@ -1,0 +1,20 @@
+services:
+  mariadb:
+    image: pfrosty/mariadb:v1
+    container_name: mariadb-compose
+    environment:
+      MYSQL_ROOT_PASSWORD: TheFutureUnemployed
+      MYSQL_DATABASE: timetable
+    volumes:
+      - project_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - mariadb_network
+
+networks:
+  mariadb_network:
+    driver: bridge
+
+volumes:
+  project_data:
