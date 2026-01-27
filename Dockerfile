@@ -1,3 +1,0 @@
-FROM mariadb:latest
-
-COPY setup.sql /docker-entrypoint-initdb.d/
