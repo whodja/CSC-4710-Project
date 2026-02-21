@@ -8,7 +8,9 @@ services:
     volumes:
       - project_data:/var/lib/mysql
       - ./sql/01_aircraft.sql:/docker-entrypoint-initdb.d/01_aircraft.sql
-      - ./sql/08_seed.sql:/docker-entrypoint-initdb.d/08_seed.sql
+      - ./sql/02_airports.sql:/docker-entrypoint-initdb.d/02_airports.sql
+      - ./sql/03_flight_distances.sql:/docker-entrypoint-initdb.d/03_flight_distances.sql
+      - ./sql/04_flights.sql:/docker-entrypoint-initdb.d/04_flights.sql
     ports:
       - "3306:3306"
     networks:
