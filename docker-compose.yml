@@ -1,12 +1,14 @@
 services:
   mariadb:
-    image: pfrosty/mariadb:v1
+    image: mariadb:10.11
     container_name: mariadb-compose
     environment:
       MYSQL_ROOT_PASSWORD: TheFutureUnemployed
       MYSQL_DATABASE: timetable
     volumes:
       - project_data:/var/lib/mysql
+      - ./sql/01_aircraft.sql:/docker-entrypoint-initdb.d/01_aircraft.sql
+      - ./sql/08_seed.sql:/docker-entrypoint-initdb.d/08_seed.sql
     ports:
       - "3306:3306"
     networks:
