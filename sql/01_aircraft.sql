@@ -8,8 +8,6 @@
 --   Aircraft_Models  - Specs for each aircraft type
 --   Aircraft         - Individual registered aircraft
 --
--- Drop order matters due to foreign key dependency:
---   Aircraft must be dropped before Aircraft_Models
 -- ================================================
 
 DROP TABLE IF EXISTS Aircraft;
