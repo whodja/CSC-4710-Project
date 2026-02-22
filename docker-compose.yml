@@ -12,6 +12,9 @@ services:
       - ./sql/03_flight_distances.sql:/docker-entrypoint-initdb.d/03_flight_distances.sql
       - ./sql/04_flights.sql:/docker-entrypoint-initdb.d/04_flights.sql
       - ./sql/05_fuel.sql:/docker-entrypoint-initdb.d/05_fuel.sql
+      - ./sql/06_passengers.sql:/docker-entrypoint-initdb.d/06_passengers.sql
+      - ./sql/07_pricing.sql:/docker-entrypoint-initdb.d/07_pricing.sql
+      - ./sql/08_reporting.sql:/docker-entrypoint-initdb.d/08_reporting.sql
     ports:
       - "3306:3306"
     networks:
