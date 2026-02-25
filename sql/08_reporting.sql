@@ -1,3 +1,9 @@
+
+-- NOT SURE IF WE ACTUALLY NEED THIS OR NOT BUT LEAVING IT FOR NOW
+-- Claude code, not very readable and I think there's an easier way to do this but I can't do that right now
+
+
+
 -- ================================================
 -- 08_reporting.sql
 -- Defines reporting views for Panther Cloud Air.
