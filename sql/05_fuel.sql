@@ -82,6 +82,4 @@ CREATE TABLE Flight_fuel_summary (
 -- Profit margin defaults to 0 until admin sets it.
 -- ------------------------------------------------
 INSERT INTO System_config (config_key, config_value) VALUES
-    ('fuel_price_per_gal', 3.50),
-    ('taxi_time_min',      15.00),
     ('profit_margin',       0.00);
