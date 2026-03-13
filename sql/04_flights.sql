@@ -38,7 +38,7 @@ CREATE TABLE Flights (
     created_at              DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (aircraft_id) REFERENCES Aircraft (aircraft_id),
-    FOREIGN KEY (distance_id) REFERENCES FlightDistances (id)
+    FOREIGN KEY (distance_id) REFERENCES Flight_distances (id)
 );
 
 -- ------------------------------------------------

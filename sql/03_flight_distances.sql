@@ -10,9 +10,9 @@
 --       airport_id via iata_code lookup.
 -- ================================================
 
-DROP TABLE IF EXISTS FlightDistances;
+DROP TABLE IF EXISTS Flight_distances;
 
-CREATE TABLE FlightDistances (
+CREATE TABLE Flight_distances (
     id              INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
     origin_id       INTEGER         NOT NULL,
     destination_id  INTEGER         NOT NULL,
@@ -24,10 +24,10 @@ CREATE TABLE FlightDistances (
 );
 
 -- ------------------------------------------------
--- Seed Data: FlightDistances
+-- Seed Data: Flight_distances
 -- All point-to-point distances in nautical miles.
 -- ------------------------------------------------
-INSERT INTO FlightDistances (origin_id, destination_id, distance_nm) VALUES
+INSERT INTO Flight_distances (origin_id, destination_id, distance_nm) VALUES
 ((SELECT airport_id FROM Airports WHERE iata_code = 'DFW'), (SELECT airport_id FROM Airports WHERE iata_code = 'ATL'), 636),
 ((SELECT airport_id FROM Airports WHERE iata_code = 'DEN'), (SELECT airport_id FROM Airports WHERE iata_code = 'ATL'), 1042),
 ((SELECT airport_id FROM Airports WHERE iata_code = 'LAX'), (SELECT airport_id FROM Airports WHERE iata_code = 'ATL'), 1691),
