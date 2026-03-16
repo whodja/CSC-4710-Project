@@ -1,4 +1,4 @@
-#This builds the actual website
+#This connects the website to the docker
 
 FROM python:3.11-slim
 WORKDIR /app

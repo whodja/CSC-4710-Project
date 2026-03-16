@@ -26,7 +26,6 @@ def get_connection():
     return connection
 
 
-# Quick test to make sure the connection works
 if __name__ == "__main__":
     try:
         conn = get_connection()
