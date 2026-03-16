@@ -18,6 +18,27 @@ services:
       - "3306:3306"
     networks:
       - mariadb_network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: flask-web
+    ports:
+      - "5000:5000"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      DB_HOST: mariadb
+      DB_USER: root
+      DB_PASSWORD: TheFutureUnemployed
+      DB_NAME: timetable
+    networks:
+      - mariadb_network
 
 networks:
   mariadb_network:
