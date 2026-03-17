@@ -11,7 +11,7 @@
 -- ================================================
 
 DROP TABLE IF EXISTS Aircraft;
-DROP TABLE IF EXISTS Aircraft_Models;
+DROP TABLE IF EXISTS Aircraft_models;
 
 -- ------------------------------------------------
 -- Aircraft_Models
@@ -20,7 +20,7 @@ DROP TABLE IF EXISTS Aircraft_Models;
 -- Cruise speed is 80% operating speed in knots.
 -- Seat configuration is defined per model.
 -- ------------------------------------------------
-CREATE TABLE Aircraft_Models (
+CREATE TABLE Aircraft_models (
     model_id                INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
     manufacturer            VARCHAR(20)     NOT NULL CHECK (manufacturer IN ('Boeing', 'Airbus')),
     model_name              VARCHAR(50)     NOT NULL UNIQUE,
@@ -57,18 +57,18 @@ CREATE TABLE Aircraft (
     total_flight_hours      DECIMAL(10,2)   NOT NULL DEFAULT 0.00 CHECK (total_flight_hours >= 0),
     created_at              DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (model_id) REFERENCES Aircraft_Models (model_id)
+    FOREIGN KEY (model_id) REFERENCES Aircraft_models (model_id)
 );
 
 -- ------------------------------------------------
--- Seed Data: Aircraft_Models
+-- Seed Data: Aircraft_models
 -- Burn rates in gal/min converted from gal/hour.
 -- model_id 1 = Boeing 737-600
 -- model_id 2 = Boeing 737-800
 -- model_id 3 = Airbus A220-100
 -- model_id 4 = Airbus A220-300
 -- ------------------------------------------------
-INSERT INTO Aircraft_Models
+INSERT INTO Aircraft_models
     (manufacturer, model_name, max_range_nm, cruise_speed_kts, max_passengers,
      seat_config_economy, seat_config_business, seat_config_first,
      fuel_capacity_gal, burn_rate_taxi, burn_rate_takeoff, burn_rate_ascent_low,
@@ -154,6 +154,6 @@ INSERT INTO Aircraft (model_id, tail_number, status, total_flight_hours) VALUES
     (4, 'N-PCA054', 'active', 0.00),
     (4, 'N-PCA055', 'active', 0.00);
 
--- Airbus A350
+-- Airbus A350 (N-PCA056)
 INSERT INTO Aircraft (model_id, tail_number, status, total_flight_hours) VALUES
     (5, 'N-PCA056', 'active', 0.00);

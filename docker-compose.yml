@@ -14,9 +14,29 @@ services:
       - ./sql/05_fuel.sql:/docker-entrypoint-initdb.d/05_fuel.sql
       - ./sql/06_passengers.sql:/docker-entrypoint-initdb.d/06_passengers.sql
       - ./sql/07_pricing.sql:/docker-entrypoint-initdb.d/07_pricing.sql
-      - ./sql/08_reporting.sql:/docker-entrypoint-initdb.d/08_reporting.sql
     ports:
       - "3306:3306"
+    networks:
+      - mariadb_network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: flask-web
+    ports:
+      - "5001:5000"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      DB_HOST: mariadb
+      DB_USER: root
+      DB_PASSWORD: TheFutureUnemployed
+      DB_NAME: timetable
     networks:
       - mariadb_network
 
