@@ -1,4 +1,4 @@
-#This connects the website to the docker
+#This imports the packages the packages used in requirements.txt
 
 FROM python:3.11-slim
 WORKDIR /app
