@@ -14,6 +14,7 @@ services:
       - ./sql/05_fuel.sql:/docker-entrypoint-initdb.d/05_fuel.sql
       - ./sql/06_passengers.sql:/docker-entrypoint-initdb.d/06_passengers.sql
       - ./sql/07_pricing.sql:/docker-entrypoint-initdb.d/07_pricing.sql
+      - ./sql/08_users.sql:/docker-entrypoint-initdb.d/08_users.sql
     ports:
       - "3306:3306"
     networks:
