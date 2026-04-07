@@ -1,29 +1,28 @@
 # db.py
 # Handles the connection to the MariaDB database.
 
-import mysql.connector
+import os
+import pymysql
+import pymysql.cursors
 
-# Database connection settings
-DB_HOST     = "localhost"
-DB_PORT     = 3306
-DB_NAME     = "timetable"
-DB_USER     = "root"
-DB_PASSWORD = "TheFutureUnemployed"
+DB_HOST     = os.environ.get("DB_HOST",     "localhost")
+DB_PORT     = int(os.environ.get("DB_PORT", "3306"))
+DB_NAME     = os.environ.get("DB_NAME",     "timetable")
+DB_USER     = os.environ.get("DB_USER",     "root")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "TheFutureUnemployed")
 
 
 def get_connection():
-    """
-    Creates and returns a connection to the database.
-    Call this function any time you need to run a query.
-    """
-    connection = mysql.connector.connect(
-        host     = DB_HOST,
-        port     = DB_PORT,
-        database = DB_NAME,
-        user     = DB_USER,
-        password = DB_PASSWORD
+    """Creates and returns a connection to the database."""
+    return pymysql.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True,
     )
-    return connection
 
 
 if __name__ == "__main__":
@@ -31,5 +30,5 @@ if __name__ == "__main__":
         conn = get_connection()
         print("Connected to the database successfully!")
         conn.close()
-    except:
-        print("Connection failed")
+    except Exception as e:
+        print(f"Connection failed: {e}")
