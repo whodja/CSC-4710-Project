@@ -27,10 +27,7 @@ CREATE TABLE Users (
 
 -- ------------------------------------------------
 -- Seed Data: Users
--- Default system users for initial setup.
--- Passwords should be replaced with hashed values.
+-- Hashed passwords are inserted at container startup
+-- by seed_users.py using werkzeug.security (PBKDF2-SHA256).
+-- Do NOT insert plaintext passwords here.
 -- ------------------------------------------------
-INSERT INTO Users (username, password, user_type)
-VALUES
-    ('admim', 'admin', 'Admin'),
-    ('employee',  'employee', 'Employee');
