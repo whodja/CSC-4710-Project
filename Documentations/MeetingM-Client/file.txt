@@ -1,0 +1,215 @@
+
+
+Meeting 1
+Date: 01/20/2026 
+Attendees: Reid, Graham, Preston and Gracie
+
+General Notes:
+- Create a new file in GitHub to upload hours every week
+- Hours tracking should be a shared responsibility 
+- Include a status report each meeting
+- Ensure dates are updated and tables are properly labeled
+
+Decisions Made:
+- Flight board layout: display all flights listed at a glance
+- Backend view showing profit data accessible behind the scenes
+
+Template Feedback:
+- Each figure and table must have a caption/short description beneath it
+- On the deliverables section, replace the placeholder word "Date" with the actual date
+
+Questions for Client:
+- [1] How should the data be formatted?
+- [2] How should the simulation be designed?
+- [3] What level of access does the client want vs. other users?
+
+
+
+
+Meeting 2:
+Date: 01/27/2026 
+Attendees: Reid, Graham, Preston and Gracie
+
+
+
+
+
+
+
+
+
+
+
+Meeting 3
+Date: 02/11/2026  
+Attendees: Reid, Graham, Preston and Gracie
+
+General Notes:
+- Admin should be availbe to change ticket price
+- Hashing passwords 
+- Should be able to defend work with code and what it does
+
+Decisions Made:
+- Continuing to fill database 
+- Establish working baseline of simulation
+- Research API's to full connect
+- Develop mockup
+
+Questions for Client:
+- [1] Would you like us to calculate the minimum profit and then add a feature for the administrator to dictate how much more each ticket should cost? Or just have it automated. 
+
+
+
+
+Meeting 4
+Date: 03/10/2026 
+Attendees: Reid, Graham, Preston and Gracie
+
+General Notes:
+- Create a new file in GitHub to upload hours every week
+- Hours tracking should be a shared responsibility 
+- Include a status report each meeting
+- Ensure dates are updated and tables are properly labeled
+
+Decisions Made:
+- Flight board layout: display all flights listed at a glance
+- Backend view showing profit data accessible behind the scenes
+
+Template Feedback:
+- Each figure and table must have a caption/short description beneath it
+- On the deliverables section, replace the placeholder word "Date" with the actual date
+
+Questions for Client:
+- [1] How should the data be formatted?
+- [2] How should the simulation be designed?
+- [3] What level of access does the client want vs. other users?
+
+
+
+
+Meeting 5
+Date: 03/10/2026 
+Attendees: Reid and Graham
+
+General Notes:
+- Create a new file in GitHub to upload hours every week
+- Hours tracking should be a shared responsibility 
+- Include a status report each meeting
+- Ensure dates are updated and tables are properly labeled
+
+Decisions Made:
+- Flight board layout: display all flights listed at a glance
+- Backend view showing profit data accessible behind the scenes
+
+Template Feedback:
+- Each figure and table must have a caption/short description beneath it
+- On the deliverables section, replace the placeholder word "Date" with the actual date
+
+Questions for Client:
+- [1] How should the data be formatted?
+- [2] How should the simulation be designed?
+- [3] What level of access does the client want vs. other users?
+
+
+
+
+Meeting 6
+Date: 01/20.2026 
+Attendees: Reid, Graham, Preston and Gracie
+
+General Notes:
+- Create a new file in GitHub to upload hours every week
+- Hours tracking should be a shared responsibility 
+- Include a status report each meeting
+- Ensure dates are updated and tables are properly labeled
+
+Decisions Made:
+- Flight board layout: display all flights listed at a glance
+- Backend view showing profit data accessible behind the scenes
+
+Template Feedback:
+- Each figure and table must have a caption/short description beneath it
+- On the deliverables section, replace the placeholder word "Date" with the actual date
+
+Questions for Client:
+- [1] How should the data be formatted?
+- [2] How should the simulation be designed?
+- [3] What level of access does the client want vs. other users?
+
+
+
+Meeting 7
+Date: 01/20.2026 
+Attendees: Reid, Graham, Preston and Gracie
+
+General Notes:
+- Create a new file in GitHub to upload hours every week
+- Hours tracking should be a shared responsibility 
+- Include a status report each meeting
+- Ensure dates are updated and tables are properly labeled
+
+Decisions Made:
+- Flight board layout: display all flights listed at a glance
+- Backend view showing profit data accessible behind the scenes
+
+Template Feedback:
+- Each figure and table must have a caption/short description beneath it
+- On the deliverables section, replace the placeholder word "Date" with the actual date
+
+Questions for Client:
+- [1] How should the data be formatted?
+- [2] How should the simulation be designed?
+- [3] What level of access does the client want vs. other users?
+
+
+
+Meeting 8
+Date: 01/20.2026 
+Attendees: Reid, Graham, Preston and Gracie
+
+General Notes:
+- Create a new file in GitHub to upload hours every week
+- Hours tracking should be a shared responsibility 
+- Include a status report each meeting
+- Ensure dates are updated and tables are properly labeled
+
+Decisions Made:
+- Flight board layout: display all flights listed at a glance
+- Backend view showing profit data accessible behind the scenes
+
+Template Feedback:
+- Each figure and table must have a caption/short description beneath it
+- On the deliverables section, replace the placeholder word "Date" with the actual date
+
+Questions for Client:
+- [1] How should the data be formatted?
+- [2] How should the simulation be designed?
+- [3] What level of access does the client want vs. other users?
+
+
+
+Meeting 9
+Date: 04/07/2026
+Attendees: Reid, Graham, and Gracie
+
+General Notes:
+- In the final what functions were used and the connection
+- Explain algorithms and why they were used
+- Checking revised final document
+
+Decisions Made:
+- Creating light and dark mode for simulation for accessibility 
+- Cleaning up and assigning github tasks 
+
+Questions for Client:
+- [1] What exactly does the client want in the README file
+- [2] How are the passwords wanted to be hashed 
+- [3] How to present the final walkthrough 
+
+
+
+
+
+
+
+
