@@ -72,7 +72,7 @@
   <div class="ph">
     <div>
       <h1>Airport Network</h1>
-      <div class="sub">30 US airports + Paris CDG &mdash; 150-mile exclusion rule applied</div>
+      <div class="sub">30 US airports + Paris CDG </div>
     </div>
     <!-- Dropdown triggers filterApts() to show all airports, hubs only, or non-hubs only -->
     <select style="width:auto" onchange="filterApts(this.value)">
@@ -85,7 +85,6 @@
   <!-- Alert banner listing all airport pairs excluded by the 150-mile proximity rule.
        These pairs appear in the TOO_CLOSE constant in aircraft_schedule.js. -->
   <div class="al al-w">
-    <span>rule:</span>
     <span style="color:var(--dim)">Airports within <strong style="color:var(--warn)">150 miles</strong> have no service or demand between them:
       AUS&harr;IAH &bull; BWI&harr;DCA,IAD,PHL &bull; DCA&harr;IAD,PHL &bull;
       EWR&harr;JFK,LGA,PHL &bull; FLL&harr;MIA &bull; IAD&harr;PHL &bull;
@@ -102,7 +101,7 @@
       <thead>
         <tr>
           <th>Rank</th><th>IATA</th><th>City</th><th>Airport Name</th>
-          <th>Metro Pop</th><th>Gates</th><th>Hub</th><th>Nearby (no service)</th>
+          <th>Metro Pop</th><th>Gates</th><th>Hub</th><th>Nearby (no direct service)</th>
         </tr>
       </thead>
       <!-- #apt-body is populated dynamically by buildApts() below -->
