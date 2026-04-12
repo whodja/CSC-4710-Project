@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<!-- coverage.html — Panther Cloud Air Demand Coverage Analysis
+     ══════════════════════════════════════════════════════════════
+
+     PURPOSE
+     ───────
+     Shows how well the current route network covers passenger demand.
+     Intended for network planners and management to identify gaps (unmet demand)
+     and confirm hub-connectivity for spoke airports.
+
+     DATA SOURCES
+     ────────────
+     DEMAND       — object in aircraft_schedule.js: origin → destination → pax/day
+     ROUTE_STATUS — object in aircraft_schedule.js: "from-to" → "direct"|"connect"|"unmet"
+     TOO_CLOSE    — Set of proximity-excluded pairs (no demand recorded, no service)
+     HUBS         — hub IATA codes; used to identify connecting airports for Via Hub routes
+
+     ROUTE CLASSIFICATION
+     ────────────────────
+     Direct  — ROUTE_STATUS[key] is "direct" or "partial": at least one nonstop
+               flight exists between the origin and destination.
+     Via Hub — ROUTE_STATUS[key] is "connect": no nonstop, but both legs exist
+               through a hub (origin→hub and hub→destination are both "direct"),
+               and the connection window is 30–360 minutes.  buildCovItems()
+               finds the first qualifying hub and stores it as connVia.
+     Unmet   — demand exists but neither direct nor hub-connected service available.
+     150mi   — pair excluded by the proximity rule; shown separately.
+
+     SUMMARY STATS (hard-coded to match project spec)
+     ──────────────────────────────────────────────────
+     71.2% demand covered = (7,503 direct + 6,887 via hub) / 20,205 total pax/day
+     237 direct routes, 333 via hub, 354 unmet, 17 exclusion pairs, 0 gate violations.
+
+     INTERACTIVE GRID
+     ────────────────
+     buildCovItems() flattens all demand pairs (plus TOO_CLOSE pairs) into the
+     covItems array.  renderCovGrid(searchStr) applies the active tab filter and
+     the airport-code search string, sorts by demand descending, and renders each
+     route as a color-coded card:
+       Green  = direct, Purple = via hub, Yellow = unmet, Red border = 150mi excl.
+
+     The search box (filterCovGrid) filters in real time on every keystroke. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Panther Cloud Air — Coverage</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <link href="panther_cloud_air.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- Shared navigation bar -->
+<nav id="nav">
+  <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
+  <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
+  <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
+  <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
+  <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
+  <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
+  <div id="nav-right">
+    <div class="theme-sw-wrap">
+      <span>Light</span>
+      <label class="theme-sw">
+        <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+        <span class="theme-sw-slider"></span>
+      </label>
+    </div>
+    <span id="nav-name"></span>
+    <span id="nav-role"></span>
+    <button class="nb-out" onclick="doLogout()">Sign out</button>
+  </div>
+</nav>
+
+<!-- Coverage page content -->
+<div id="pg-coverage" class="pg" style="display:block">
+  <div class="ph">
+    <div>
+      <h1>Demand Coverage</h1>
+      <div class="sub">20,205 pax/day total demand &mdash; 150-mile exclusion applied</div>
+    </div>
+  </div>
+
+  <!-- KPI stat tiles: overall % covered, breakdown by route type, and gate violation count -->
+  <div class="stats">
+    <div class="stat"><div class="sv" style="color:var(--ok)">71.2%</div><div class="sl">Demand Covered</div></div>
+    <div class="stat"><div class="sv">237</div><div class="sl">Direct Routes</div><div class="sd" style="color:var(--dim)">7,503 pax/day</div></div>
+    <div class="stat"><div class="sv" style="color:var(--lav)">333</div><div class="sl">Via Hub (timed)</div><div class="sd" style="color:var(--dim)">6,887 pax/day</div></div>
+    <div class="stat"><div class="sv" style="color:var(--warn)">354</div><div class="sl">Unmet Routes</div></div>
+    <div class="stat"><div class="sv">17</div><div class="sl">150mi Excl. Pairs</div></div>
+    <div class="stat"><div class="sv" style="color:var(--ok)">0</div><div class="sl">Gate Violations</div></div>
+  </div>
+
+  <!-- Visual progress bar for overall demand coverage percentage -->
+  <div class="box">
+    <div class="bh">
+      <h2>Coverage Progress</h2>
+      <span style="font-size:11px;color:var(--dim)">direct + timed hub connections</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
+      <span style="color:var(--dim)">0%</span>
+      <span style="color:var(--ok);font-family:'Orbitron',monospace">71.2%</span>
+      <span style="color:var(--dim)">100%</span>
+    </div>
+    <div class="prog-bar"><div class="prog-fill" style="width:71.2%"></div></div>
+    <!-- Color legend for the coverage grid cards below -->
+    <div style="display:flex;gap:14px;font-size:11px;margin-top:8px;flex-wrap:wrap">
+      <span><span style="color:var(--ok)">&#9646;</span> Direct (237 routes, 7,503 pax)</span>
+      <span><span style="color:#6b5fff">&#9646;</span> Via Hub (333 routes, 6,887 pax)</span>
+      <span><span style="color:var(--warn)">&#9646;</span> Unmet (354 routes, 5,815 pax)</span>
+      <span><span style="color:var(--bad)">&#9646;</span> 150mi excl.</span>
+    </div>
+  </div>
+
+  <!-- Route detail grid with filter tabs and airport code search.
+       #cov-grid is populated dynamically by renderCovGrid(). -->
+  <div class="box">
+    <div class="bh">
+      <h2>Route Detail</h2>
+      <!-- Filter tabs: clicking calls setCovF() which sets covFilter and re-renders the grid -->
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <button class="tab on"  id="cf-all"     onclick="setCovF('all')">All</button>
+        <button class="tab"     id="cf-direct"  onclick="setCovF('direct')">Direct &#x2708;</button>
+        <button class="tab"     id="cf-connect" onclick="setCovF('connect')">Via Hub &#x1F501;</button>
+        <button class="tab"     id="cf-unmet"   onclick="setCovF('unmet')">Unmet &#x26A0;</button>
+        <button class="tab"     id="cf-tc"      onclick="setCovF('tc')">150mi Excl.</button>
+      </div>
+    </div>
+    <!-- Live airport code search — filters #cov-grid in real-time via filterCovGrid() -->
+    <input style="margin-bottom:10px" placeholder="Search airport code (e.g. ATL)"
+           oninput="filterCovGrid(this.value)" id="cov-search">
+    <div class="cov-grid" id="cov-grid"></div>
+  </div>
+</div>
+
+<script src="aircraft_schedule.js"></script>
+<script src="panther_cloud_air_shared.js"></script>
+<script>
+'use strict';
+
+/* covFilter: current active tab filter ('all' | 'direct' | 'connect' | 'unmet' | 'tc')
+   covItems:  pre-computed flat array of route objects built by buildCovItems() */
+var covFilter = 'all';
+var covItems  = [];
+
+/* buildCovItems()
+   Iterates over TOO_CLOSE pairs (added with mode='tc') and the DEMAND matrix.
+   For each demand pair it checks ROUTE_STATUS to classify as direct/connect/unmet.
+   For hub-connected routes it finds which hub provides the connection. */
+function buildCovItems() {
+  covItems = [];
+  var seen = {};
+  // Add 150-mile exclusion pairs first (both directions)
+  TOO_CLOSE.forEach(function(k){
+    var p = k.split('-'), k1 = p[0]+'-'+p[1], k2 = p[1]+'-'+p[0];
+    if (!seen[k1]){ seen[k1]=1; covItems.push({fr:p[0],to:p[1],d:0,mode:'tc',connVia:'',k:k1}); }
+    if (!seen[k2]){ seen[k2]=1; covItems.push({fr:p[1],to:p[0],d:0,mode:'tc',connVia:'',k:k2}); }
+  });
+  // Add all origin-destination demand pairs and classify each
+  Object.keys(DEMAND).forEach(function(fr){
+    Object.keys(DEMAND[fr]).forEach(function(to){
+      var d = DEMAND[fr][to]; if (!d) return;
+      var k = fr+'-'+to; if (seen[k]) return; seen[k]=1;
+      var st = ROUTE_STATUS[k] || 'unmet';
+      var mode = (st==='direct'||st==='partial') ? 'direct' : st==='connect' ? 'connect' : 'unmet';
+      var connVia = '';
+      // For hub-connected routes, find the first hub that has direct legs on both sides
+      if (mode === 'connect') {
+        for (var h = 0; h < HUBS.length; h++) {
+          if (ROUTE_STATUS[fr+'-'+HUBS[h]]==='direct' && ROUTE_STATUS[HUBS[h]+'-'+to]==='direct'){ connVia=HUBS[h]; break; }
+        }
+        if (!connVia) connVia = 'hub';
+      }
+      covItems.push({fr:fr, to:to, d:d, mode:mode, connVia:connVia, k:k});
+    });
+  });
+}
+
+/* setCovF(f) — switches the active filter tab and re-renders the grid */
+function setCovF(f) {
+  covFilter = f;
+  ['all','direct','connect','unmet','tc'].forEach(function(id){
+    var el = document.getElementById('cf-'+id); if (el) el.classList.remove('on');
+  });
+  var el = document.getElementById('cf-'+f); if (el) el.classList.add('on');
+  var search = document.getElementById('cov-search');
+  renderCovGrid(search ? search.value : '');
+}
+
+/* filterCovGrid(s) — called on every keystroke in the search box */
+function filterCovGrid(s) { renderCovGrid(s); }
+
+/* renderCovGrid(s)
+   Applies the active mode filter and the search string, sorts by demand descending,
+   and renders each route as a color-coded card in #cov-grid. */
+function renderCovGrid(s) {
+  s = (s || '').toLowerCase();
+  var items = covItems.filter(function(i){
+    if (covFilter==='direct'  && i.mode!=='direct')  return false;
+    if (covFilter==='connect' && i.mode!=='connect') return false;
+    if (covFilter==='unmet'   && i.mode!=='unmet')   return false;
+    if (covFilter==='tc'      && i.mode!=='tc')      return false;
+    if (s && i.fr.toLowerCase().indexOf(s)<0 && i.to.toLowerCase().indexOf(s)<0) return false;
+    return true;
+  });
+  // Sort highest-demand routes first so planners can see the most important gaps at top
+  items.sort(function(a,b){ return b.d - a.d; });
+  var html = '';
+  items.forEach(function(i){
+    // Each card gets a label, a CSS class for background color, and a badge class
+    var lbl, cls, bc;
+    if      (i.mode==='direct')  { lbl='Direct &#x2708;';             cls='c-d'; bc='b-ok';   }
+    else if (i.mode==='connect') { lbl='Via '+i.connVia+' &#x1F501;'; cls='c-c'; bc='b-v';   }
+    else if (i.mode==='tc')      { lbl='150mi excl.';                 cls='c-t'; bc='b-tc';  }
+    else                         { lbl='Unmet &#x26A0;';              cls='c-n'; bc='b-warn'; }
+    html += '<div class="cov-card '+cls+'">';
+    html += '<div><div class="cov-route">'+i.fr+' &rarr; '+i.to+'</div>';
+    html += '<div style="font-size:10px;color:var(--dim)">'+(i.d>0?i.d+' pax/day':'no demand')+'</div></div>';
+    html += '<span class="badge '+bc+'">'+lbl+'</span></div>';
+  });
+  document.getElementById('cov-grid').innerHTML = html ||
+    '<div style="color:var(--dim);padding:16px;font-size:12px">No routes match.</div>';
+}
+
+/* buildCovGrid() — builds the covItems list if not yet built, then renders */
+function buildCovGrid() {
+  if (!covItems.length) buildCovItems();
+  var search = document.getElementById('cov-search');
+  renderCovGrid(search ? search.value : '');
+}
+
+/* init() — page startup: theme, auth check, nav setup, load airports, render grid */
+async function init() {
+  setupTheme();
+  var auth = checkAuth();
+  if (!auth) return;
+  setupNav(auth);
+  await loadAirports();
+  buildCovGrid();
+}
+
+init();
+</script>
+</body>
+</html>

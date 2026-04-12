@@ -1,4 +1,11 @@
 <!DOCTYPE html>
+<!-- panther_cloud_air.html
+     LEGACY MONOLITHIC VERSION — all pages (login, airports, schedule, coverage, book,
+     employee, admin) live inside a single HTML file and are shown/hidden via showPage().
+     This file was the original single-page application before the project was split into
+     separate page files (login.html, airports.html, schedule.html, coverage.html,
+     book.html, employee.html, admin.html).
+     It is kept for reference but the active multi-page version should be used instead. -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -16,7 +23,6 @@
   <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
   <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
   <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
-  <button class="nb" id="nb-coverage"  onclick="go('coverage')">Coverage</button>
   <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
   <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
   <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
@@ -42,13 +48,6 @@
       <div class="lcard">
         <div class="f"><label>Username</label><input id="lu" placeholder="username"></div>
         <div class="f"><label>Password</label><input id="lp" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"></div>
-        <div class="f">
-          <label>Role</label>
-          <select id="lr">
-            <option value="Employee">Employee / Staff</option>
-            <option value="Admin">Administrator</option>
-          </select>
-        </div>
         <button class="btn bp" style="width:100%;justify-content:center;margin-top:4px" onclick="doLogin()">Sign In</button>
         <p id="login-err" style="font-size:11px;color:var(--bad);text-align:center;margin-top:8px;display:none"></p>
       </div>
@@ -664,15 +663,15 @@
 'use strict';
 
 // ── Global state ─────────────────────────────────────────────────
-var AIRPORTS   = [];   // populated from /api/airports
-var CITY       = {};   // populated from AIRPORTS
-var HUBS       = [];   // populated from AIRPORTS (is_hub=true)
-var DB_AIRCRAFT = [];  // populated from /api/aircraft
-var curCls     = 'e';
-var selLegs    = null;
-var itin       = [];
-var covFilter  = 'all';
-var covItems   = [];
+var AIRPORTS    = [];    // All airport objects loaded from /api/airports on init
+var CITY        = {};    // Map of IATA code → city name used in schedule/booking labels
+var HUBS        = [];    // IATA codes of hub airports (is_hub = true in DB)
+var DB_AIRCRAFT = [];    // Aircraft spec objects from /api/aircraft; used for fleet model cards
+var curCls      = 'e';   // Selected cabin class: 'e'=economy, 'b'=business, 'f'=first
+var selLegs     = null;  // Array of flight objects forming the chosen itinerary
+var itin        = [];    // All itineraries returned by the last doSearch() call
+var covFilter   = 'all'; // Active coverage grid filter: 'all'|'direct'|'connect'|'unmet'|'tc'
+var covItems    = [];    // Flat list of route coverage cards built by buildCovItems()
 
 // ── API base URL ─────────────────────────────────────────────────
 // When served by Flask (/), the origin IS the API.
@@ -680,12 +679,16 @@ var covItems   = [];
 var API_BASE = (location.protocol === 'file:') ? 'http://localhost:5001' : '';
 
 // ── Page navigation ──────────────────────────────────────────────
+
+// Hide every .pg element and show only the one matching 'pg-<id>'
 function showPage(id) {
   document.querySelectorAll('.pg').forEach(function(p){ p.style.display = 'none'; });
   var el = document.getElementById('pg-' + id);
   if (el) el.style.display = 'block';
 }
 
+// Navigate to a named page, highlight its nav button, and trigger any
+// page-specific data builds (confirm, done, coverage, admin)
 function go(id) {
   showPage(id);
   document.querySelectorAll('.nb').forEach(function(n){ n.classList.remove('on'); });
@@ -698,6 +701,10 @@ function go(id) {
 }
 
 // ── Tab switching ────────────────────────────────────────────────
+
+// Switch the active tab inside the Employee ('emp') or Admin ('adm') portal.
+// Removes 'on' from all sibling tabs and panels, then marks the clicked
+// button and its target panel as active.
 function stab(group, panelId, btn) {
   var tabsId  = group === 'emp' ? 'emp-tabs' : 'adm-tabs';
   var pageId  = group === 'emp' ? 'pg-employee' : 'pg-admin';
@@ -709,10 +716,13 @@ function stab(group, panelId, btn) {
 }
 
 // ── Login / Logout ───────────────────────────────────────────────
+
+// POST credentials to /api/login. On success call _completeLogin().
+// Falls back to demo-mode login (no DB required) if the fetch fails.
 function doLogin() {
   var u = document.getElementById('lu').value.trim();
   var p = document.getElementById('lp').value.trim();
-  var r = document.getElementById('lr').value;
+  var r = document.getElementById('lr').value;    // role selected in dropdown
   var errEl = document.getElementById('login-err');
 
   if (!u || !p) {
@@ -738,11 +748,13 @@ function doLogin() {
     }
   })
   .catch(function(){
-    // DB not reachable — allow demo login with the selected role
+    // DB not reachable — allow demo login with the role chosen in the dropdown
     _completeLogin(u, r);
   });
 }
 
+// Show the nav bar, display the username/role, reveal role-specific nav buttons,
+// and navigate to the appropriate portal page.
 function _completeLogin(username, role) {
   document.getElementById('nav-name').textContent = username;
   document.getElementById('nav-role').textContent = role === 'Admin' ? 'Admin' : 'Staff';
@@ -751,10 +763,12 @@ function _completeLogin(username, role) {
   var empBtn = document.getElementById('nb-employee');
   var admBtn = document.getElementById('nb-admin');
   if (empBtn) empBtn.style.display = 'inline-flex';
+  // Admin button is hidden for Employee users
   if (role === 'Admin' && admBtn) admBtn.style.display = 'inline-flex';
   go(role === 'Admin' ? 'admin' : 'employee');
 }
 
+// Hide the nav bar and role-specific buttons, then return to the login page.
 function doLogout() {
   ['nb-employee','nb-admin'].forEach(function(id){
     var el = document.getElementById(id);
@@ -765,7 +779,12 @@ function doLogout() {
 }
 
 // ── Airports table ───────────────────────────────────────────────
+
+// Render the airports table. filter is 'all', 'hub', or 'non'.
+// Builds a lookup of nearby (150-mile exclusion) airports from TOO_CLOSE,
+// then writes one <tr> per airport into #apt-body.
 function buildApts(filter) {
+  // Build a map of iata -> [nearby iata codes] from the TOO_CLOSE set
   var near = {};
   TOO_CLOSE.forEach(function(k){
     var p = k.split('-');
@@ -781,6 +800,7 @@ function buildApts(filter) {
 
   var html = '';
   rows.forEach(function(a){
+    // Hubs get 11 gates, international gets '--', spokes get 1-5 based on pop
     var g  = a.hub ? 11 : a.intl ? '--' : Math.min(Math.floor(a.pop || 0), 5) || 1;
     var nb = (near[a.iata] || []).map(function(c){
       return '<span class="badge b-tc" style="margin-right:2px">' + c + '</span>';
@@ -799,14 +819,19 @@ function buildApts(filter) {
   document.getElementById('apt-body').innerHTML = html;
 }
 
+// Called by the dropdown onchange — re-renders the table with the chosen filter.
 function filterApts(v) { buildApts(v); }
 
 // ── Flight schedule table ────────────────────────────────────────
+
+// Render the schedule table from an array of flight objects.
+// Each row shows flight number, route, times, aircraft type, seat count,
+// passenger load with a colour-coded mini bar, and a quick-book button.
 function buildSched(list) {
   document.getElementById('sched-sub').textContent = list.length + ' flights today';
   var html = '';
   list.forEach(function(f){
-    var pct = Math.round(f.pax / f.seats * 100);
+    var pct = Math.round(f.pax / f.seats * 100);   // load factor as a percentage
     html += '<tr>';
     html += '<td><span class="mn" style="color:var(--lav)">' + f.num + '</span></td>';
     html += '<td><strong>' + f.from + '</strong><br><span style="font-size:10px;color:var(--dim)">' + (CITY[f.from] || '') + '</span></td>';
@@ -815,6 +840,7 @@ function buildSched(list) {
     html += '<td><span class="tag">' + f.type + '</span></td>';
     html += '<td style="font-size:10px;color:var(--dim)">' + f.tail + '</td>';
     html += '<td>' + f.seats + '</td><td>' + f.pax + '</td>';
+    // Load bar turns amber when load factor is below 30%
     html += '<td>' + pct + '%<div class="bar" style="width:50px"><div class="bf" style="width:' + pct + '%;' + (pct < 30 ? 'background:var(--warn)' : '') + '"></div></div></td>';
     html += '<td><button class="btn bg2 sm" data-fr="' + f.from + '" data-to="' + f.to + '" onclick="quickBook(this.dataset.fr,this.dataset.to)">Book</button></td>';
     html += '</tr>';
@@ -822,6 +848,7 @@ function buildSched(list) {
   document.getElementById('sched-body').innerHTML = html;
 }
 
+// Filter the schedule table by origin, destination, and aircraft type dropdowns.
 function filterSched() {
   var fr = document.getElementById('sf-from').value;
   var to = document.getElementById('sf-to').value;
@@ -831,11 +858,14 @@ function filterSched() {
   }));
 }
 
+// Clear all schedule filters and restore the full flight list.
 function resetSched() {
   ['sf-from','sf-to','sf-type'].forEach(function(id){ document.getElementById(id).value = ''; });
   buildSched(FLIGHTS);
 }
 
+// Pre-fill the booking search with a specific route and trigger the search.
+// Called from the Book button in each schedule row.
 function quickBook(fr, to) {
   document.getElementById('b-from').value = fr;
   document.getElementById('b-to').value   = to;
@@ -843,6 +873,7 @@ function quickBook(fr, to) {
   doSearch();
 }
 
+// Swap the values of the origin and destination airport dropdowns.
 function swapPorts() {
   var a = document.getElementById('b-from');
   var b = document.getElementById('b-to');
@@ -850,22 +881,41 @@ function swapPorts() {
 }
 
 // ── Flight search / booking flow ─────────────────────────────────
+
+// Returns true if the two airports are within the 150-mile exclusion zone.
 function isTooClose(a, b) { return TOO_CLOSE.has([a,b].sort().join('-')); }
+
+// Convert a "HH:MM" string to total minutes past midnight.
 function mins(t){ var p = t.split(':'); return parseInt(p[0])*60 + parseInt(p[1]); }
 
+// getCpm() — reads cents-per-nautical-mile rate from localStorage (set by admin Pricing tab).
+// Default 65 ¢/nm. Range 5–150.
+function getCpm() {
+  var v = parseFloat(localStorage.getItem('pca_cpm'));
+  return (v >= 5 && v <= 150) ? v : 65;
+}
+
+// Calculate the economy base fare from total block minutes across all legs.
+// Formula: est_nm = block_minutes × 6 (450 kt proxy); fare = max($49, round(est_nm × cpm/100))
 function baseFare(legs) {
   var b = 0;
   legs.forEach(function(l){
     var d = mins(l.dep), a = mins(l.arr);
+    // Handle overnight flights where arr < dep
     b += a > d ? a - d : (1440 - d + a);
   });
-  return Math.max(49, Math.round(b * 0.115));
+  return Math.max(49, Math.round(b * 6 * getCpm() / 100));
 }
 
+// DFS through the FLIGHTS adjacency graph to find up to 6 itineraries
+// within the allowed number of stops. Enforces:
+//   - 30-min minimum / 6-hour maximum connection window
+//   - 150-mile proximity rule (no service between too-close airports)
+//   - No flight number reuse within the same itinerary
 function doSearch() {
   var fr = document.getElementById('b-from').value;
   var to = document.getElementById('b-to').value;
-  var ms = parseInt(document.getElementById('b-stops').value);
+  var ms = parseInt(document.getElementById('b-stops').value);   // max stops allowed
   if (fr === to) { alert('Origin and destination must be different.'); return; }
   if (isTooClose(fr, to)) {
     document.getElementById('results').innerHTML =
@@ -873,6 +923,7 @@ function doSearch() {
       fr + ' and ' + to + ' are within 150 miles. No service between these airports.</span></div>';
     return;
   }
+  // Build adjacency graph: airport -> [flights departing from that airport]
   var graph = {};
   FLIGHTS.forEach(function(f){ if (!graph[f.from]) graph[f.from] = []; graph[f.from].push(f); });
   itin = [];
@@ -881,11 +932,11 @@ function doSearch() {
     var legs = graph[cur] || [];
     for (var i = 0; i < legs.length; i++) {
       var f = legs[i];
-      if (path.some(function(x){ return x.num === f.num; })) continue;
+      if (path.some(function(x){ return x.num === f.num; })) continue;  // no loops
       if (isTooClose(f.from, f.to)) continue;
       if (path.length > 0) {
         var gap = mins(f.dep) - mins(path[path.length-1].arr);
-        if (gap < 30 || gap > 360) continue;
+        if (gap < 30 || gap > 360) continue;   // connection window check
       }
       var np = path.concat([f]);
       if (f.to === to) itin.push(np); else dfs(f.to, np);
@@ -895,6 +946,8 @@ function doSearch() {
   renderResults();
 }
 
+// Render the list of itineraries found by doSearch() as clickable flight cards.
+// Shows origin/dest, departure/arrival, stop count, and economy fare estimate.
 function renderResults() {
   var el = document.getElementById('results');
   if (!itin.length) {
@@ -941,8 +994,11 @@ function renderResults() {
   el.innerHTML = html;
 }
 
+// Store the chosen itinerary, build the class-selector page, and navigate to it.
 function pickItin(i) { selLegs = itin[i]; buildCls(); go('class'); }
 
+// Populate the class-selector page with journey header and prices for all three cabins.
+// Business = 2.2× economy; First = 4× economy.
 function buildCls() {
   if (!selLegs) return;
   var base = baseFare(selLegs);
@@ -962,6 +1018,9 @@ function buildCls() {
   pickCls('e');
 }
 
+// Highlight the selected cabin class card and update the amenity checklist.
+// Amenity array order: checked-bag, 2nd-bag, seat-selection, priority-boarding,
+//                      lounge, meal, refundable.
 function pickCls(c) {
   curCls = c;
   ['e','b','f'].forEach(function(x){ document.getElementById('cl-'+x).className = 'cl' + (c === x ? ' c'+x : ''); });
@@ -973,13 +1032,16 @@ function pickCls(c) {
   }
 }
 
+// Build the confirmation page: render the selected leg details and
+// a price breakdown (base fare + 11.5% taxes + 2% airport surcharge).
+// Stores the grand total in window._total for use by confirmBooking().
 function buildConf() {
   if (!selLegs) return;
-  var mult = {e:1, b:2.2, f:4}[curCls];
+  var mult = {e:1, b:2.2, f:4}[curCls];   // cabin class price multiplier
   var base = baseFare(selLegs);
   var fare = Math.round(base * mult);
-  var tax  = Math.round(fare * 0.115);
-  var sur  = Math.round(fare * 0.02);
+  var tax  = Math.round(fare * 0.115);     // federal excise + segment fees
+  var sur  = Math.round(fare * 0.02);      // airport passenger facility charge
   var total= fare + tax + sur;
   window._total = total;
   var jh = '';
@@ -1001,6 +1063,9 @@ function buildConf() {
   document.getElementById('conf-price').innerHTML = ph;
 }
 
+// Validate passenger details, POST to /api/bookings, store the returned
+// reference code in window._bookingRef, then navigate to the done page.
+// Falls back to a locally generated reference if the API is unreachable.
 function confirmBooking() {
   var first = document.getElementById('p-first').value.trim();
   var last  = document.getElementById('p-last').value.trim();
@@ -1022,15 +1087,18 @@ function confirmBooking() {
   })
   .then(function(res){ return res.json(); })
   .then(function(data){
+    // Use the server-generated ref code, or fall back to a random one
     window._bookingRef = data.booking_ref || ('PCA-' + Math.floor(10000 + Math.random()*90000));
     go('done');
   })
   .catch(function(){
+    // API unreachable — generate a local reference so the UI still works
     window._bookingRef = 'PCA-' + Math.floor(10000 + Math.random()*90000);
     go('done');
   });
 }
 
+// Populate the booking confirmation page with the reference code and trip summary.
 function buildDone() {
   document.getElementById('ref-num').textContent = window._bookingRef || ('PCA-' + Math.floor(10000 + Math.random()*90000));
   if (!selLegs) return;
@@ -1043,6 +1111,9 @@ function buildDone() {
 }
 
 // ── Live flight tracker ──────────────────────────────────────────
+
+// Render the first 10 flights from the schedule with hard-coded mock statuses.
+// In a production system these statuses would be fetched from a real-time feed.
 function buildLive() {
   var statuses = ['On Time','On Time','Delayed +12m','On Time','Boarding','On Time','On Time','Delayed +8m','On Time','On Time'];
   var html = '';
@@ -1064,18 +1135,24 @@ function buildLive() {
 }
 
 // ── Fleet table ──────────────────────────────────────────────────
+
+// Build the fleet performance table. Aggregates each aircraft's total pax and
+// seat counts from FLIGHTS, then renders up to 18 rows with load %, block hours,
+// simulated maintenance hours, and a View button that opens the side panel.
 function buildFleet() {
+  // Build per-tail aggregate from the schedule data
   var tails = {};
   AIRCRAFT.forEach(function(ac){ tails[ac.tail] = {type:ac.type, base:ac.base, legs:ac.legs, pax:0, seats:0}; });
   FLIGHTS.forEach(function(f){ if (tails[f.tail]){ tails[f.tail].pax += f.pax; tails[f.tail].seats += f.seats; } });
+  // Simulated maintenance hours per aircraft (static sample data for the demo)
   var mhrs = [32,55,78,102,14,140,167,190,23,88,112,5,145,198,61,33,77,120,165,188,42,95,130,178,11];
   var idx = 0, html = '';
   Object.keys(tails).slice(0, 18).forEach(function(tail){
     var d    = tails[tail];
     var load = d.seats > 0 ? Math.round(d.pax / d.seats * 100) : 0;
-    var blkH = (d.legs.length * 2.1).toFixed(1);
+    var blkH = (d.legs.length * 2.1).toFixed(1);   // approx 2.1 hrs per flight leg
     var mh   = mhrs[idx % mhrs.length]; idx++;
-    var st   = mh > 185 ? 'Maint.' : 'Active';
+    var st   = mh > 185 ? 'Maint.' : 'Active';     // flag aircraft needing maintenance
     var sb   = st === 'Active' ? '<span class="badge b-ok">Active</span>' : '<span class="badge b-hub">Maint.</span>';
     html += '<tr>';
     html += '<td><span class="mn">' + tail + '</span></td>';
@@ -1092,7 +1169,8 @@ function buildFleet() {
   document.getElementById('fleet-body').innerHTML = html;
 }
 
-// Populate fleet model summary cards from the DB fleet data
+// Populate the fleet model summary stat cards at the top of the Fleet tab.
+// Groups DB_AIRCRAFT rows by model_name and shows count, seat config, and daily lease cost.
 function buildFleetModelStats() {
   if (!DB_AIRCRAFT.length) return;
   var models = {};
@@ -1114,6 +1192,9 @@ function buildFleetModelStats() {
 }
 
 // ── Busiest routes / route profitability ─────────────────────────
+
+// Aggregate FLIGHTS by route, sort by total passengers, and render the
+// top 6 busiest routes in the Employee portal's operations panel.
 function buildBusyRoutes() {
   var rf = {};
   FLIGHTS.forEach(function(f){
@@ -1133,6 +1214,9 @@ function buildBusyRoutes() {
   document.getElementById('busy-routes').innerHTML = html;
 }
 
+// Render the Admin Routes tab: top 20 routes sorted by passenger volume.
+// Estimates revenue (fare × pax), fuel cost (block hrs × 800 gal/hr × $6.19),
+// and landing fees ($2,000/flight) to compute a per-route P&L.
 function buildRouteTable() {
   var rf = {};
   FLIGHTS.forEach(function(f){
@@ -1144,7 +1228,7 @@ function buildRouteTable() {
   var html = '';
   sorted.forEach(function(r){
     var load  = Math.round(r.pax / r.seats * 100);
-    var baseF = Math.max(49, Math.round(r.bm / r.n * 0.115));
+    var baseF = Math.max(49, Math.round(r.bm / r.n * 6 * getCpm() / 100));
     var revR  = baseF * r.pax;
     var fuelR = (r.bm / 60) * 800 * 6.19;
     var feesR = r.n * 2000;
@@ -1163,6 +1247,10 @@ function buildRouteTable() {
 }
 
 // ── Coverage grid ────────────────────────────────────────────────
+
+// Build covItems — a flat list of all O-D route cards used by the Coverage page.
+// Inserts 150-mile exclusion pairs first (mode='tc'), then classifies every
+// DEMAND entry as 'direct', 'connect', or 'unmet' using ROUTE_STATUS.
 function buildCovItems() {
   covItems = [];
   var seen = {};
@@ -1189,6 +1277,7 @@ function buildCovItems() {
   });
 }
 
+// Set the active coverage filter, update the tab button highlight, and re-render the grid.
 function setCovF(f) {
   covFilter = f;
   ['all','direct','connect','unmet','tc'].forEach(function(id){
@@ -1198,8 +1287,11 @@ function setCovF(f) {
   renderCovGrid(document.getElementById('cov-search') ? document.getElementById('cov-search').value : '');
 }
 
+// Called by the search input's oninput handler to re-render with the typed filter.
 function filterCovGrid(s) { renderCovGrid(s); }
 
+// Render coverage grid cards filtered by covFilter mode and the search string s.
+// Cards are sorted by daily demand (highest first).
 function renderCovGrid(s) {
   s = (s || '').toLowerCase();
   var items = covItems.filter(function(i){
@@ -1226,12 +1318,17 @@ function renderCovGrid(s) {
   document.getElementById('cov-grid').innerHTML = html || '<div style="color:var(--dim);padding:16px;font-size:12px">No routes match.</div>';
 }
 
+// Entry point for the Coverage page: build item list on first visit, then render.
 function buildCovGrid() {
   if (!covItems.length) buildCovItems();
   renderCovGrid(document.getElementById('cov-search') ? document.getElementById('cov-search').value : '');
 }
 
 // ── Select dropdowns ─────────────────────────────────────────────
+
+// Populate all airport <select> elements from the unique codes in FLIGHTS.
+// Booking selects (b-from, b-to, e-from, e-to, mf-from, mf-to) use "code - city" labels.
+// Schedule filter selects (sf-from, sf-to) get a leading "All" option.
 function populateSels() {
   var codes = [], seen = {};
   FLIGHTS.forEach(function(f){
@@ -1252,12 +1349,18 @@ function populateSels() {
 }
 
 // ── Modal & Side panel ───────────────────────────────────────────
+
+// Show a modal overlay by adding the 'on' class to its backdrop element.
 function openMod(id) { document.getElementById(id).classList.add('on'); }
+// Hide a modal overlay. Also wired to click-outside via the listener below.
 function closeMod(id){ document.getElementById(id).classList.remove('on'); }
+// Close any modal when the user clicks on the dark backdrop (outside the card).
 document.querySelectorAll('.mbg').forEach(function(bg){
   bg.addEventListener('click', function(e){ if (e.target === bg) bg.classList.remove('on'); });
 });
 
+// Open the aircraft detail side panel, populate it with the tail number,
+// model type, and a timeline of up to 4 flights for that aircraft today.
 function openSide(tail, type) {
   document.getElementById('side-tail').textContent = tail;
   document.getElementById('side-type').textContent = type;
@@ -1266,6 +1369,7 @@ function openSide(tail, type) {
   var legs = ac ? ac.legs.slice(0, 4) : [];
   var h = '<div style="font-size:11px;color:var(--dim);margin-bottom:8px">Flights Today</div><div class="tl">';
   legs.forEach(function(l, i){
+    // First leg is 'done', second is 'now' (current flight), rest are pending
     h += '<div class="ti"><div class="td '+(i===0?'done':i===1?'now':'')+'"></div>';
     h += '<div style="font-size:10px;color:var(--dim)">'+l.dep+'</div>';
     h += '<div style="font-size:12px;font-weight:500">'+l.fn+' - '+l.fr+' to '+l.to+'</div></div>';
@@ -1274,27 +1378,45 @@ function openSide(tail, type) {
   document.getElementById('side-legs').innerHTML = h;
   document.getElementById('side').classList.add('on');
 }
+// Slide the side panel off-screen.
 function closeSide() { document.getElementById('side').classList.remove('on'); }
 
 // ── Pricing margin controls ──────────────────────────────────────
+
+// Increment or decrement a pricing margin by d (±1), clamped to 1-99%.
+// k is one of: 'sh' (short-haul), 'mh' (medium-haul), 'lh' (long-haul), 'intl'.
 function adj(k, d) {
   margins[k] = Math.max(1, Math.min(99, margins[k] + d));
   document.getElementById(k+'-v').textContent = margins[k] + '%';
 }
 
 // ── Simulation engine ────────────────────────────────────────────
-var simState = {day:0, log:[], cumPax:0, cumRev:0, cumCost:0};
 
+// Persistent simulation state tracked across simRunDay() calls.
+var simState = {
+  day:     0,    // number of days simulated so far
+  log:     [],   // array of per-day result objects
+  cumPax:  0,    // total passengers across all run days
+  cumRev:  0,    // total revenue ($)
+  cumCost: 0     // total operating cost ($)
+};
+
+// Create a deterministic pseudo-random number generator seeded by `seed`.
+// Uses a simple xorshift algorithm so each simulated day produces the same
+// results every time (reproducible outcomes for the same challenge day).
 function mkRng(seed) {
   var s = seed >>> 0 || 1;
   return function(){ s^=s<<13; s^=s>>>17; s^=s<<5; return (s>>>0)/0xffffffff; };
 }
 
+// Simulate the next day using the pre-defined CHALLENGES entry for that day.
+// Calculates flights operated/cancelled, passenger load, revenue, and costs,
+// then appends a result object to simState.log and refreshes the UI.
 function simRunDay() {
   if (simState.day >= 14){ alert('All 14 days complete. Use Reset to start over.'); return; }
   var d  = simState.day;
   var ch = CHALLENGES[d];
-  var rng= mkRng(d * 2654435761 + 1);
+  var rng= mkRng(d * 2654435761 + 1);   // deterministic seed per day
 
   var raw_flights  = BASE_FLIGHTS;
   var cancelled    = Math.round(raw_flights * ch.cancel_pct * (0.7 + rng() * 0.6));
@@ -1329,11 +1451,13 @@ function simRunDay() {
   refreshSimUI();
 }
 
+// Fast-forward by running every remaining day to completion.
 function simRunAll() {
   if (simState.day >= 14){ alert('All 14 days complete. Use Reset to start over.'); return; }
   while (simState.day < 14) simRunDay();
 }
 
+// Clear simulation state and reset the UI back to Day 0.
 function simReset() {
   simState = {day:0, log:[], cumPax:0, cumRev:0, cumCost:0};
   refreshSimUI();
@@ -1341,9 +1465,13 @@ function simReset() {
   if (qout) qout.innerHTML = '<span style="color:var(--dim)">Query results appear here.</span>';
 }
 
+// Format a dollar amount as $X.XXM (millions), $XXk (thousands), or $XX.
 function fmtM(n){ var abs=Math.abs(n),s=n<0?'-':''; return abs>=1e6?s+'$'+(abs/1e6).toFixed(2)+'M':abs>=1000?s+'$'+(abs/1000).toFixed(0)+'k':s+'$'+Math.round(abs).toLocaleString(); }
+// Format a large integer as X.Xk or plain number.
 function fmtK(n){ return n>=1000?(n/1000).toFixed(1)+'k':n.toLocaleString(); }
 
+// Sync all simulation UI elements with the current simState:
+// progress bar, day label, cumulative summary, 14-day log table, and sparkbars.
 function refreshSimUI() {
   var d = simState.day, log = simState.log;
   var pct  = Math.round(d / 14 * 100);
@@ -1396,11 +1524,14 @@ function refreshSimUI() {
   buildSparkbar('sim-plbars-mini', log, 14);
 }
 
+// Render a proportional P&L sparkbar into element elId.
+// Green bars grow upward for profit days; red bars grow downward for loss days.
+// Bar heights are scaled relative to the day with the largest absolute P&L.
 function buildSparkbar(elId, log, total) {
   var el = document.getElementById(elId); if (!el) return;
   var maxAbs = 0;
   for (var i = 0; i < log.length; i++) maxAbs = Math.max(maxAbs, Math.abs(log[i].pl));
-  if (maxAbs === 0) maxAbs = 1;
+  if (maxAbs === 0) maxAbs = 1;   // avoid divide-by-zero when no data yet
   var html = '';
   for (var i = 0; i < total; i++) {
     html += '<div style="display:flex;flex-direction:column;align-items:center;flex:1">';
@@ -1418,6 +1549,11 @@ function buildSparkbar(elId, log, total) {
 }
 
 // ── In-page SQL query simulator ──────────────────────────────────
+
+// Parse a simplified SQL-like query string and render results against
+// the in-memory FLIGHTS, AIRCRAFT, SIM (simState.log), or DEMAND data.
+// Supports: SELECT * FROM <table> [WHERE col='val'] [LIMIT n]
+// This is a demo feature — it does NOT query the real MariaDB database.
 function execQuery() {
   var qEl = document.getElementById('sim-query');
   var out  = document.getElementById('sim-query-out');
@@ -1480,18 +1616,25 @@ function execQuery() {
 }
 
 // ── Initialise — fetch live data then build UI ───────────────────
+
+// Bootstraps the application on page load:
+//   1. Fetch airports, aircraft specs, and pricing from the Flask API.
+//      Each fetch is wrapped in try/catch so the UI still works if the DB is offline.
+//   2. Call all table/grid builders to pre-render every page.
+//   3. Show the login page last so the user can't navigate before data is ready.
 async function init() {
-  // Fetch airports from DB (or fall back silently)
+  // ── 1a. Load airport list from DB ───────────────────────────────
   try {
     var res = await fetch(API_BASE + '/api/airports');
     var data = await res.json();
+    // Normalize API response into the lightweight shape the UI expects
     AIRPORTS = data.map(function(a, i){
       return {
         rank: i + 1,
         iata: a.iata_code,
         city: a.city,
         name: a.airport_name,
-        pop:  a.metro_pop / 1e6,
+        pop:  a.metro_pop / 1e6,   // metro population in millions
         hub:  !!a.is_hub,
         intl: a.iata_code === 'CDG',
       };
@@ -1501,12 +1644,12 @@ async function init() {
     HUBS = AIRPORTS.filter(function(a){ return a.hub; }).map(function(a){ return a.iata; });
   } catch (e) {
     console.warn('Could not load airports from API — DB may be offline. Using fallback.');
-    // Fallback: derive CITY/HUBS from FLIGHTS data
+    // Derive minimal CITY/HUBS from the static FLIGHTS schedule data
     FLIGHTS.forEach(function(f){ if (!CITY[f.from]) CITY[f.from]=''; if (!CITY[f.to]) CITY[f.to]=''; });
     HUBS = ['ATL','DFW','DEN','ORD','JFK'];
   }
 
-  // Fetch aircraft specs from DB (for fleet model summary)
+  // ── 1b. Load aircraft specs for fleet model summary cards ────────
   try {
     var res2 = await fetch(API_BASE + '/api/aircraft');
     DB_AIRCRAFT = await res2.json();
@@ -1514,7 +1657,7 @@ async function init() {
     console.warn('Could not load aircraft specs from API.');
   }
 
-  // Fetch pricing info (just to display the "loaded" status)
+  // ── 1c. Load pricing rules to verify DB connectivity ────────────
   try {
     var res3 = await fetch(API_BASE + '/api/pricing');
     var pricing = await res3.json();
@@ -1525,7 +1668,7 @@ async function init() {
     if (el) el.textContent = 'DB offline';
   }
 
-  // Build all UI components
+  // ── 2. Build all UI components ───────────────────────────────────
   buildApts('all');
   populateSels();
   buildSched(FLIGHTS);
@@ -1536,6 +1679,7 @@ async function init() {
   buildRouteTable();
   buildCovItems();
   refreshSimUI();
+  // ── 3. Show login page ───────────────────────────────────────────
   showPage('login');
 }
 

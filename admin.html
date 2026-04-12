@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<!-- admin.html — Panther Cloud Air Admin Dashboard
+     ══════════════════════════════════════════════════════════════════
+
+     ACCESS CONTROL
+     ──────────────
+     Admin-only.  init() checks checkAuth() (shared.js); if role ≠ "Admin" the
+     user is immediately redirected to employee.html.  The nav bar shows BOTH
+     "Employee" and "Admin" buttons for Admin-role users.
+
+     TAB OVERVIEW
+     ────────────
+     Routes     — Top-20 routes by passenger volume.
+                  Columns: route, hub/spoke badge, flight count, load%,
+                  revenue, fuel cost, landing fees, P&L.
+                  Revenue and P&L update live when the Pricing sliders change.
+                  Built by buildRouteTable().
+
+     Fleet      — Per-aircraft performance table (all aircraft, no limit).
+                  Shows tail, type, home base, leg count, estimated block hours,
+                  maintenance hour sample, load%, and operational status.
+                  Aircraft with > 185 maintenance hours show a "Maint." badge.
+                  Clicking "View" opens the #side panel with that aircraft's
+                  today-schedule timeline.
+                  Built by buildFleet() and buildFleetModelStats().
+
+     Simulation — 14-day operational simulation driven by CHALLENGES[] in
+                  aircraft_schedule.js.  Each day has a challenge (weather,
+                  strike, demand spike, etc.) that modifies cancellation rate,
+                  load factor, and cost multipliers.
+                  "Run Next Day" / "Run All 14" / "Reset" control simState.
+                  Revenue is computed from getCpm() × computeMarginScale() so
+                  all stored baseRev values update live when margins change.
+                  Clicking a completed day row opens the per-aircraft detail panel
+                  with individual flight statuses (on-time / delayed / cancelled).
+
+     Pricing    — Two interactive controls that affect fares everywhere:
+                  1. ¢/nm slider: sets the base fare rate (cents per nautical mile).
+                     Default 65 ¢/nm keeps the fleet profitable at baseline margins.
+                     Changing this value resets the simulation.
+                  2. Margin sliders: four percentage targets by haul category
+                     (short < 350mi, medium 350–1500mi, long > 1500mi, intl JFK↔CDG).
+                     computeMarginScale() converts these to a revenue multiplier
+                     applied on top of the ¢/nm base fare.
+                  Both controls persist to localStorage so book.html and other
+                  pages read the same values without an API call.
+                  The "Daily P&L Projection" and "Per-Aircraft Daily P&L" tables
+                  update live with every slider movement.
+
+     PRICING FORMULA (used throughout this file)
+     ────────────────────────────────────────────
+     getCpmFare(bm) = max($49, round(bm × 6 nm/min × getCpm()/100))
+     revenue = getCpmFare(bm) × pax × computeMarginScale()
+
+     SIMULATION STATE MACHINE
+     ─────────────────────────
+     simState  { day, log[], cumPax, cumCost }
+     log entry { day, name, flights, cancelled, delays, pax, baseRev, cost,
+                 fuel, lease, land, cdg, maint, weather_factor, cancel_pct }
+     baseRev is stored pre-margin so refreshSimUI() can rescale live.
+     The CPM rate is baked into baseRev at the time simRunDay() runs.
+     Changing the ¢/nm slider resets simState so baseRevs stay consistent.
+
+     KEY HELPER FUNCTIONS (alphabetical)
+     ─────────────────────────────────────
+     adjCpmSlider(v)           — update ¢/nm, reset sim, refresh all P&L
+     adjSlider(k, v)           — update a margin percentage, refresh P&L
+     applyAutoRoutes()         — assign default legs to unrouted aircraft
+     buildFleet()              — render the Fleet tab table
+     buildFleetModelStats()    — render per-model KPI tiles (Fleet tab header)
+     buildPricingAircraftTable() — per-aircraft P&L in Pricing tab
+     buildRouteTable()         — top-20 route P&L in Routes tab
+     buildSparkbar(id, log, n) — mini bar chart for daily P&L
+     computeCpmAvgFarePerPax() — fleet-average fare at current ¢/nm (for simulation)
+     computeMarginScale()      — revenue multiplier from current margin settings
+filterDayDetail(hub)      — filter per-aircraft detail by hub/international
+     getCpmFare(bm)            — economy fare for a block-minute duration
+     renderDayDetail()         — per-aircraft table for a selected simulation day
+     refreshSimUI()            — re-render simulation log, summary, spark bars
+     simReset()                — clear simState and re-render empty simulation
+     simRunAll()               — run all remaining simulation days
+     simRunDay()               — simulate one day using CHALLENGES[day]
+     showDayDetail(dayIdx)     — open the per-aircraft detail panel
+     updatePricingImpact()     — cascade refresh: pricing table, routes, sim log
+
+     MODAL + SIDE PANEL
+     ───────────────────
+     #m-flt  — "Add New Flight" modal (openMod / closeMod from shared.js)
+     #side   — Aircraft leg detail panel (openSide / closeSide from shared.js) -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Panther Cloud Air — Admin</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <link href="panther_cloud_air.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- Shared navigation bar -->
+<nav id="nav">
+  <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
+  <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
+  <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
+  <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
+  <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
+  <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
+  <div id="nav-right">
+    <div class="theme-sw-wrap">
+      <span>Light</span>
+      <label class="theme-sw">
+        <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+        <span class="theme-sw-slider"></span>
+      </label>
+    </div>
+    <span id="nav-name"></span>
+    <span id="nav-role"></span>
+    <button class="nb-out" onclick="doLogout()">Sign out</button>
+  </div>
+</nav>
+
+<div id="pg-admin" class="pg" style="display:block">
+  <div class="ph">
+    <div><h1>Admin Dashboard</h1><div class="sub">Full operational control</div></div>
+    <div style="display:flex;gap:6px">
+      <button class="btn bg2 sm">Export CSV</button>
+      <button class="btn bp sm" onclick="openMod('m-flt')">+ New Flight</button>
+    </div>
+  </div>
+  <div class="tabs" id="adm-tabs">
+    <button class="tab on" onclick="stab('adm','aroutes',this)">Routes</button>
+    <button class="tab"    onclick="stab('adm','afleet',this)">Fleet</button>
+    <button class="tab"    onclick="stab('adm','asim',this)">Simulation</button>
+    <button class="tab"    onclick="stab('adm','apricing',this)">Pricing</button>
+  </div>
+
+  <!-- Tab: Routes — top 20 routes by passenger volume with revenue, fuel cost, landing fees,
+       and per-route P&L. #route-body is populated by buildRouteTable(). -->
+  <div class="pan on" id="aroutes">
+    <div class="box">
+      <div class="bh"><h2>Route Profitability (Top 20)</h2><button class="btn bg2 sm">CSV</button></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Route</th><th>Type</th><th>Flights</th><th>Load%</th><th>Revenue</th><th>Fuel</th><th>Fees</th><th>P&amp;L</th></tr></thead>
+          <tbody id="route-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Fleet — per-aircraft performance table (tail, type, base, flights, block hours,
+       maintenance hours, load%, status). Aircraft with > 185 maintenance hours show "Maint." badge.
+       #fleet-model-stats shows aggregate stats per model from the DB (loaded via loadAircraft()).
+       "View" opens the side panel for individual leg detail. -->
+  <div class="pan" id="afleet">
+    <div class="stats" style="margin-bottom:12px" id="fleet-model-stats"></div>
+    <div class="box">
+      <div class="bh"><h2>Fleet Performance</h2></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Tail</th><th>Type</th><th>Base</th><th>Flights</th><th>Block Hrs</th><th>Maint Hrs</th><th>Load%</th><th>Status</th><th></th></tr></thead>
+          <tbody id="fleet-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Simulation — 14-day operational simulation driven by the CHALLENGES array
+       in aircraft_schedule.js. Each challenge includes weather_factor, cancel_pct,
+       and delay_chance that modify the baseline flight/pax/cost metrics.
+       "Run Next Day" / "Run All 14" / "Reset" buttons control simState.
+       Results appear in the log table and spark bar charts.
+       -->
+  <div class="pan" id="asim">
+    <div class="g2" style="margin-bottom:12px">
+      <div class="box">
+        <div class="bh">
+          <h2>Simulation Control</h2>
+          <span class="badge b-v" id="sim-day-label">Day 0 / 14</span>
+        </div>
+        <div class="bar" style="height:6px;margin:4px 0 12px">
+          <div class="bf" id="sim-prog" style="width:0%"></div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+          <button class="btn bok"  onclick="simRunDay()">&#x25B6;&nbsp;Run Next Day</button>
+          <button class="btn bp"   onclick="simRunAll()">&#x23ED;&nbsp;Run All 14</button>
+          <button class="btn bdng sm" onclick="simReset()">&#x21BA;&nbsp;Reset</button>
+        </div>
+
+      </div>
+      <div class="box">
+        <div class="bh"><h2>Cumulative Summary</h2></div>
+        <div id="sim-summary">
+          <div class="row"><span style="color:var(--dim)">Days run</span>         <span class="mn" style="color:var(--dim)">0 / 14</span></div>
+          <div class="row"><span style="color:var(--dim)">Total passengers</span> <span style="color:var(--dim)">&#x2013;</span></div>
+          <div class="row"><span style="color:var(--dim)">Total revenue</span>    <span style="color:var(--dim)">&#x2013;</span></div>
+          <div class="row"><span style="color:var(--dim)">Total cost</span>       <span style="color:var(--dim)">&#x2013;</span></div>
+          <div class="divl"></div>
+          <div class="row"><strong>Cumulative P&amp;L</strong><strong style="color:var(--dim)">&#x2013;</strong></div>
+        </div>
+        <div class="divl" style="margin:12px 0 8px"></div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">P&amp;L by day:</div>
+        <div class="pbs" id="sim-plbars-mini" style="height:44px"></div>
+        <div style="font-size:10px;color:var(--dim);margin-top:4px">
+          <span style="color:var(--ok)">&#9646;</span> profit &nbsp;
+          <span style="color:var(--bad)">&#9646;</span> loss
+        </div>
+      </div>
+    </div>
+    <div class="box">
+      <div class="bh">
+        <h2>14-Day Operational Log</h2>
+        <span style="font-size:11px;color:var(--dim)">Challenges per spec</span>
+      </div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Day</th><th>Challenge</th><th>Flights</th><th>Pax</th><th>Revenue</th><th>P&amp;L</th><th>Status</th></tr></thead>
+          <tbody id="sim-log"></tbody>
+        </table>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-top:6px">&#x25B6; Click a completed day row to see per-aircraft flight detail</div>
+    </div>
+
+    <!-- Per-aircraft day detail panel — populated by showDayDetail() when a log row is clicked -->
+    <div class="box" id="sim-day-detail" style="display:none;margin-top:12px">
+      <div class="bh" style="flex-wrap:wrap;gap:6px">
+        <div>
+          <h2 id="day-detail-title">Day Details</h2>
+          <div id="day-detail-challenge" style="font-size:10px;color:var(--dim);margin-top:2px"></div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <div id="day-detail-summary" style="font-size:10px;color:var(--dim)"></div>
+          <button class="btn bg2 sm" onclick="hideDayDetail()">&#x2715; Close</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn bg2 sm" id="ddf-ALL"  onclick="filterDayDetail('ALL')">All</button>
+        <button class="btn bg2 sm" id="ddf-ATL"  onclick="filterDayDetail('ATL')">ATL Hub</button>
+        <button class="btn bg2 sm" id="ddf-DFW"  onclick="filterDayDetail('DFW')">DFW Hub</button>
+        <button class="btn bg2 sm" id="ddf-DEN"  onclick="filterDayDetail('DEN')">DEN Hub</button>
+        <button class="btn bg2 sm" id="ddf-ORD"  onclick="filterDayDetail('ORD')">ORD Hub</button>
+        <button class="btn bg2 sm" id="ddf-INTL" onclick="filterDayDetail('INTL')">International</button>
+      </div>
+      <div id="day-detail-content" class="tw"></div>
+    </div>
+  </div>
+
+  <!-- Tab: Pricing — drag sliders to set profit margin targets per haul category.
+       adjSlider() updates margins{} and calls updatePricingImpact() to show live P&L delta.
+       Margins affect simulation revenue via computeMarginScale() in simRunDay().
+       The ¢/nm slider sets the base fare rate; adjusting it resets the simulation. -->
+  <div class="pan" id="apricing">
+
+    <!-- Base Fare Rate slider — cents per nautical mile -->
+    <div class="box" style="margin-bottom:12px">
+      <div class="bh"><h2>Base Fare Rate</h2><span style="font-size:10px;color:var(--dim)">Affects ticket prices &amp; all P&amp;L areas</span></div>
+      <div style="font-size:12px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <strong>Cents per Nautical Mile (¢/nm)</strong>
+          <span class="mv" id="cpm-v" style="color:var(--pk2)">65¢/nm</span>
+        </div>
+        <div style="color:var(--dim);font-size:10px;margin-bottom:6px" id="cpm-sample">e.g. 500 nm economy flight = $325</div>
+        <input type="range" min="5" max="150" value="65" id="cpm-slider"
+               oninput="adjCpmSlider(this.value)"
+               style="width:100%;accent-color:var(--pk2);cursor:pointer;height:4px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-top:3px">
+          <span>5¢ (budget)</span><span>75¢ (break-even)</span><span>150¢ (premium)</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn bg2 sm" onclick="resetCpm()">Reset to Default</button>
+        <span style="font-size:10px;color:var(--dim)" id="cpm-note">Changing this rate resets the simulation.</span>
+      </div>
+    </div>
+
+    <div class="g2">
+      <div class="box">
+        <div class="bh"><h2>Profit Margins by Route Type</h2></div>
+        <div style="font-size:12px">
+
+          <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <strong>Short-Haul (&lt;350mi)</strong>
+              <span class="mv" id="sh-v">18%</span>
+            </div>
+            <div style="color:var(--dim);font-size:10px;margin-bottom:5px">e.g. ATL&rarr;CLT, ATL&rarr;TPA</div>
+            <input type="range" min="1" max="99" value="18" id="sh-slider"
+                   oninput="adjSlider('sh',this.value)"
+                   style="width:100%;accent-color:var(--lav);cursor:pointer;height:4px">
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <strong>Medium-Haul (350&ndash;1500mi)</strong>
+              <span class="mv" id="mh-v">22%</span>
+            </div>
+            <div style="color:var(--dim);font-size:10px;margin-bottom:5px">e.g. DFW&rarr;LAX, ATL&rarr;ORD</div>
+            <input type="range" min="1" max="99" value="22" id="mh-slider"
+                   oninput="adjSlider('mh',this.value)"
+                   style="width:100%;accent-color:var(--lav);cursor:pointer;height:4px">
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <strong>Long-Haul (&gt;1500mi)</strong>
+              <span class="mv" id="lh-v">26%</span>
+            </div>
+            <div style="color:var(--dim);font-size:10px;margin-bottom:5px">e.g. JFK&rarr;LAX, ATL&rarr;SEA</div>
+            <input type="range" min="1" max="99" value="26" id="lh-slider"
+                   oninput="adjSlider('lh',this.value)"
+                   style="width:100%;accent-color:var(--lav);cursor:pointer;height:4px">
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <strong>International JFK&harr;CDG</strong>
+              <span class="mv" id="intl-v">32%</span>
+            </div>
+            <div style="color:var(--dim);font-size:10px;margin-bottom:5px">A350, includes EUR fees</div>
+            <input type="range" min="1" max="99" value="32" id="intl-slider"
+                   oninput="adjSlider('intl',this.value)"
+                   style="width:100%;accent-color:var(--lav);cursor:pointer;height:4px">
+          </div>
+
+        </div>
+        <div style="margin-top:10px;display:flex;gap:6px">
+          <button class="btn bok sm" onclick="saveMargins()">Save</button>
+          <button class="btn bg2 sm" onclick="resetMargins()">Reset</button>
+        </div>
+      </div>
+      <div class="box">
+        <div class="bh"><h2>Daily P&amp;L Projection</h2><span style="font-size:10px;color:var(--dim)">Updates live</span></div>
+        <div style="font-size:12px">
+          <div class="row"><span style="color:var(--dim)">Total fleet revenue</span><span id="pricing-total-rev" style="color:var(--ok)">&#x2013;</span></div>
+          <div class="row"><span style="color:var(--dim)">Total fleet cost</span><span id="pricing-total-cost" style="color:var(--bad)">&#x2013;</span></div>
+          <div class="divl"></div>
+          <div class="row"><strong>Daily P&amp;L</strong><strong id="pricing-total-pl" style="color:var(--dim)">&#x2013;</strong></div>
+        </div>
+        <div class="divl" style="margin:12px 0 8px"></div>
+        <div class="bh" style="margin-bottom:6px"><h2>Class Multipliers</h2></div>
+        <div style="font-size:12px">
+          <div class="row"><span>Economy class</span> <span style="color:var(--ok)">1.0&times; base fare</span></div>
+          <div class="row"><span>Business class</span><span style="color:var(--lav)">2.2&times; base fare</span></div>
+          <div class="row"><span>First class</span>   <span style="color:var(--pk2)">4.0&times; base fare</span></div>
+          <div class="divl"></div>
+          <div class="row"><span style="color:var(--dim)">Source: /api/pricing</span><span id="pricing-loaded" style="color:var(--dim)">loading&hellip;</span></div>
+        </div>
+      </div>
+    </div>
+    <!-- Per-aircraft P&L table — built by buildPricingAircraftTable(), updates live with margin changes -->
+    <div class="box" style="margin-top:12px">
+      <div class="bh">
+        <h2>Per-Aircraft Daily P&amp;L</h2>
+        <span style="font-size:10px;color:var(--dim)">Baseline schedule &mdash; sorted by P&amp;L, updates live with margin changes</span>
+      </div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Tail</th><th>Type</th><th>Hub</th><th>Legs</th><th>Revenue</th><th>Cost</th><th>P&amp;L</th></tr></thead>
+          <tbody id="pricing-aircraft-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><!-- end pg-admin -->
+
+
+<!-- Modal: Add New Flight — overlay form triggered by the "+ New Flight" button.
+     openMod('m-flt') / closeMod('m-flt') from shared.js toggle its visibility.
+     From/To dropdowns are populated by populateSels() at init time. -->
+<div class="mbg" id="m-flt">
+  <div class="mc2">
+    <button class="mxx" onclick="closeMod('m-flt')">&#x2715;</button>
+    <h2 style="font-family:'Orbitron',monospace;font-size:13px;color:var(--lav);margin-bottom:14px">Add New Flight</h2>
+    <div class="g2">
+      <div class="f"><label>From</label><select id="mf-from"></select></div>
+      <div class="f"><label>To</label>  <select id="mf-to"></select></div>
+    </div>
+    <div class="g2">
+      <div class="f"><label>Departure</label><input type="time" value="08:00"></div>
+      <div class="f"><label>Aircraft</label> <select><option>B736</option><option>B738</option><option>A221</option><option>A223</option><option>A359</option></select></div>
+    </div>
+    <button class="btn bp" style="width:100%;justify-content:center">Save Flight</button>
+  </div>
+</div>
+
+<!-- Side Panel: Aircraft detail — slides in from the right when "View" is clicked on a
+     fleet row. Shows the tail number, aircraft type, and the list of legs flown today.
+     openSide(tail, type) populates #side-tail, #side-type, and #side-legs;
+     closeSide() hides the panel. -->
+<div class="side" id="side">
+  <button class="sx" onclick="closeSide()">&#x2715;</button>
+  <div style="font-family:'Orbitron',monospace;font-size:13px;color:var(--lav);margin-bottom:4px" id="side-tail"></div>
+  <div style="font-size:11px;color:var(--dim);margin-bottom:10px" id="side-type"></div>
+  <div class="divl"></div>
+  <div id="side-legs"></div>
+</div>
+
+<script src="aircraft_schedule.js"></script>
+<script src="panther_cloud_air_shared.js"></script>
+<script>
+'use strict';
+
+/* margins: profit margin targets (%) by haul category.
+   Loaded from localStorage (if saved by a previous session), otherwise use defaults.
+   Persisted on every change so book.html reads the same values. */
+var margins = (function(){
+  try { var s = JSON.parse(localStorage.getItem('pca_margins')); if (s && s.sh) return s; } catch(e) {}
+  return {sh:18, mh:22, lh:26, intl:32};
+})();
+
+/* getCpmFare(bm) — economy fare for a single leg given block minutes.
+   Uses getCpm() from shared.js: fare = max($49, round(bm × 6 × cpm/100)).
+   6 nm/min is the average ground-speed proxy (~450 kt domestic/international mix). */
+function getCpmFare(bm) {
+  return Math.max(49, Math.round(bm * 6 * getCpm() / 100));
+}
+
+/* computeCpmAvgFarePerPax()
+   Computes the fleet-average economy fare per passenger at the current ¢/nm rate.
+   Result is used by simRunDay() so simulation revenue reflects the slider setting.
+   Cached per-cpm value to avoid looping FLIGHTS on every key stroke. */
+var _cpmFareCache = null, _cpmFareCacheKey = null;
+function computeCpmAvgFarePerPax() {
+  var cpm = getCpm();
+  if (_cpmFareCacheKey === cpm && _cpmFareCache !== null) return _cpmFareCache;
+  var totalFare = 0, totalPax = 0;
+  FLIGHTS.forEach(function(f) {
+    var bm = mins(f.arr) - mins(f.dep);
+    if (bm <= 0) bm += 1440;
+    totalFare += Math.max(49, Math.round(bm * 6 * cpm / 100)) * f.pax;
+    totalPax  += f.pax;
+  });
+  _cpmFareCacheKey = cpm;
+  _cpmFareCache    = totalPax > 0 ? totalFare / totalPax : cpm * 7.2; // fallback: 120min avg
+  return _cpmFareCache;
+}
+
+/* adjCpmSlider(v) — called on every ¢/nm slider change.
+   Saves to localStorage, invalidates the fare cache, refreshes all P&L displays,
+   and resets the simulation (because stored baseRev was computed at the old rate). */
+function adjCpmSlider(v) {
+  var cpm = Math.max(5, Math.min(150, parseInt(v, 10)));
+  localStorage.setItem('pca_cpm', cpm);
+  _cpmFareCache = null; _cpmFareCacheKey = null;
+  var vl = document.getElementById('cpm-v');      if (vl) vl.textContent = cpm + '¢/nm';
+  var sp = document.getElementById('cpm-sample'); if (sp) sp.textContent = 'e.g. 500 nm economy flight = $' + Math.max(49, Math.round(500 * cpm / 100));
+  // Reset sim so stored baseRevs stay consistent with the new fare rate
+  simState = {day:0, log:[], cumPax:0, cumCost:0};
+  hideDayDetail();
+  updatePricingImpact();
+  refreshSimUI();
+}
+
+/* resetCpm() — restores default ¢/nm (65) and triggers a full refresh. */
+function resetCpm() {
+  var sl = document.getElementById('cpm-slider'); if (sl) sl.value = 65;
+  adjCpmSlider(65);
+}
+
+/* simState: tracks the 14-day simulation progress
+     day:      next day to run (0–14)
+     log:      array of per-day result objects (each has baseRev; rev/pl computed live)
+     cumPax:   total passengers across completed days
+     cumCost:  total operating cost across completed days (rev/pl computed live via margins) */
+var simState = {
+  day: 0, log: [], cumPax: 0, cumCost: 0
+};
+
+// ── Auto-route unrouted aircraft ────────────────────────────────
+/* UNROUTED_DEFAULTS: deterministic routes for any aircraft that has no legs in the
+   static schedule. These are pre-computed reasonable round-trips for the 3 ATL A223s
+   that have empty legs in aircraft_schedule.js (N313CA, N314CA, N315CA).
+   Stored to localStorage as 'pca_auto_routes' so they persist across sessions. */
+var UNROUTED_DEFAULTS = {
+  'N313CA': { to:'PHX', legs:[
+    {fn:'AX001', fr:'ATL', to:'PHX', dep:'07:00', arr:'11:05'},
+    {fn:'AX002', fr:'PHX', to:'ATL', dep:'12:05', arr:'16:30'}]},
+  'N314CA': { to:'SEA', legs:[
+    {fn:'AX003', fr:'ATL', to:'SEA', dep:'07:00', arr:'11:45'},
+    {fn:'AX004', fr:'SEA', to:'ATL', dep:'12:45', arr:'17:45'}]},
+  'N315CA': { to:'SFO', legs:[
+    {fn:'AX005', fr:'ATL', to:'SFO', dep:'07:00', arr:'11:30'},
+    {fn:'AX006', fr:'SFO', to:'ATL', dep:'12:30', arr:'17:00'}]}
+};
+
+/* applyAutoRoutes() — called at init.
+   For each aircraft with no legs: load saved routes from localStorage (or use the
+   UNROUTED_DEFAULTS), assign them to the AIRCRAFT entry, and inject them into FLIGHTS
+   so route/pricing/search data stays consistent. Saves new assignments to localStorage. */
+function applyAutoRoutes() {
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem('pca_auto_routes') || '{}'); } catch(e) {}
+  var changed = false;
+
+  AIRCRAFT.forEach(function(ac) {
+    if (ac.legs && ac.legs.length > 0) return;   // already has routes
+    var src = saved[ac.tail] || UNROUTED_DEFAULTS[ac.tail];
+    if (!src) {
+      // Generic fallback: ATL↔ORD out-and-back
+      src = { to:'ORD', legs:[
+        {fn:'AX' + ac.tail.slice(-3) + 'O', fr:ac.base, to:'ORD', dep:'08:00', arr:'10:18'},
+        {fn:'AX' + ac.tail.slice(-3) + 'R', fr:'ORD', to:ac.base, dep:'11:03', arr:'13:21'}]};
+    }
+    ac.legs = src.legs;
+    // Inject into FLIGHTS so pricing/route tables pick them up
+    var seats = ac.type === 'A221' ? 110 : ac.type === 'A223' ? 130 : ac.type === 'B736' ? 110 : 162;
+    src.legs.forEach(function(leg) {
+      var already = FLIGHTS.some(function(f){ return f.num === leg.fn; });
+      if (!already) {
+        FLIGHTS.push({
+          num: leg.fn, tail: ac.tail, type: ac.type,
+          from: leg.fr, to: leg.to, dep: leg.dep, arr: leg.arr,
+          seats: seats, pax: Math.round(seats * 0.65)
+        });
+      }
+    });
+    if (!saved[ac.tail]) { saved[ac.tail] = src; changed = true; }
+  });
+
+  if (changed) localStorage.setItem('pca_auto_routes', JSON.stringify(saved));
+}
+
+// ── Fleet ────────────────────────────────────────────────────────
+/* buildFleet()
+   Builds the fleet performance table for ALL aircraft (no slice).
+   Aggregates pax/seats per tail from FLIGHTS, estimates block hours (legs × avg block),
+   assigns a cyclic maintenance-hours sample, and marks aircraft > 185 maint-hours as Maint. */
+function buildFleet() {
+  var tails = {};
+  AIRCRAFT.forEach(function(ac){ tails[ac.tail] = {type:ac.type, base:ac.base, legs:ac.legs, pax:0, seats:0}; });
+  FLIGHTS.forEach(function(f){ if (tails[f.tail]){ tails[f.tail].pax += f.pax; tails[f.tail].seats += f.seats; } });
+  var mhrs = [32,55,78,102,14,140,167,190,23,88,112,5,145,198,61,33,77,120,165,188,42,95,130,178,11,
+              44,67,89,113,26,155,172,195,38,91,118,7,149,182,64,37,80,123,161,189,48,99,134,175,12,58];
+  var idx = 0, html = '';
+  Object.keys(tails).forEach(function(tail){
+    var d    = tails[tail];
+    var noRoute = !d.legs || d.legs.length === 0;
+    var load = d.seats > 0 ? Math.round(d.pax / d.seats * 100) : 0;
+    var blkH = ((d.legs ? d.legs.length : 0) * 2.1).toFixed(1);
+    var mh   = mhrs[idx % mhrs.length]; idx++;
+    var st   = mh > 185 ? 'Maint.' : 'Active';
+    var sb   = noRoute
+      ? '<span class="badge b-warn">No Route</span>'
+      : (st === 'Active' ? '<span class="badge b-ok">Active</span>' : '<span class="badge b-hub">Maint.</span>');
+    html += '<tr>';
+    html += '<td><span class="mn">' + tail + '</span></td>';
+    html += '<td><span class="tag">' + d.type + '</span></td>';
+    html += '<td style="font-size:10px;color:var(--dim)">' + d.base + '</td>';
+    html += '<td>' + (d.legs ? d.legs.length : 0) + '</td>';
+    html += '<td>' + blkH + 'h</td>';
+    html += '<td style="color:' + (mh > 185 ? 'var(--warn)' : 'var(--ok)') + '">' + mh + 'h' + (mh > 185 ? ' !' : '') + '</td>';
+    html += '<td style="color:' + (load > 30 ? 'var(--ok)' : 'var(--warn)') + '">' + (noRoute ? '—' : load + '%') + '</td>';
+    html += '<td>' + sb + '</td>';
+    html += '<td><button class="btn bg2 sm" data-tail="' + tail + '" data-type="' + d.type + ' - ' + d.base + '" onclick="openSide(this.dataset.tail,this.dataset.type)">View</button></td>';
+    html += '</tr>';
+  });
+  document.getElementById('fleet-body').innerHTML = html;
+}
+
+/* buildFleetModelStats()
+   Reads DB_AIRCRAFT (loaded from /api/aircraft) and groups by model_name to show
+   count, total seats, and daily lease cost per aircraft model in the Fleet tab header. */
+function buildFleetModelStats() {
+  if (!DB_AIRCRAFT.length) return;
+  var models = {};
+  DB_AIRCRAFT.forEach(function(a){
+    var k = a.model_name;
+    if (!models[k]) models[k] = {count:0, seats: a.seat_config_economy + a.seat_config_business + a.seat_config_first, lease: a.monthly_lease_usd};
+    models[k].count++;
+  });
+  var html = '';
+  Object.keys(models).forEach(function(name){
+    var m = models[name];
+    html += '<div class="stat">';
+    html += '<div class="sv">' + m.count + '</div>';
+    html += '<div class="sl">' + name + '</div>';
+    html += '<div class="sd" style="color:var(--dim)">' + m.seats + ' seats &mdash; $' + Math.round(m.lease/30).toLocaleString() + '/day lease</div>';
+    html += '</div>';
+  });
+  document.getElementById('fleet-model-stats').innerHTML = html;
+}
+
+// ── Routes ───────────────────────────────────────────────────────
+/* buildRouteTable()
+   ──────────────────
+   Builds the Routes tab top-20 profitability table.
+
+   For each unique origin–destination pair the function aggregates:
+     n      — number of daily flights on that route
+     pax    — total passengers across all flights
+     seats  — total seats (for load factor)
+     bm     — total block minutes (used to compute average per-flight fare)
+
+   Revenue formula per route:
+     avg_fare = getCpmFare(total_bm / n)    ← average per-flight economy fare
+     revR     = avg_fare × pax × computeMarginScale()
+
+   Cost assumptions (simplified for the simulation):
+     Fuel: (total_bm / 60) × 800 gal/hr × $6.19/gal
+     Fees: n × $2,000 per landing
+
+   Routes are sorted by total passengers (busiest first); top 20 rendered.
+   Hub routes are badged differently from spoke routes using the HUBS array.
+   All revenue and P&L cells update live when the ¢/nm or margin sliders change,
+   because buildRouteTable() is called by updatePricingImpact(). */
+function buildRouteTable() {
+  var rf = {};
+  FLIGHTS.forEach(function(f){
+    var k = f.from + '-' + f.to;
+    if (!rf[k]) rf[k] = {from:f.from, to:f.to, n:0, pax:0, seats:0, bm:0};
+    rf[k].n++; rf[k].pax += f.pax; rf[k].seats += f.seats; rf[k].bm += mins(f.arr) - mins(f.dep);
+  });
+  var sorted = Object.values(rf).sort(function(a,b){ return b.pax - a.pax; }).slice(0, 20);
+  var html = '';
+  sorted.forEach(function(r){
+    var load  = Math.round(r.pax / r.seats * 100);
+    var baseF = getCpmFare(r.bm / r.n);
+    var revR  = Math.round(baseF * r.pax * computeMarginScale());
+    var fuelR = (r.bm / 60) * 800 * 6.19;
+    var feesR = r.n * 2000;
+    var pl    = revR - fuelR - feesR;
+    var isHub = HUBS.indexOf(r.from) >= 0 || HUBS.indexOf(r.to) >= 0;
+    html += '<tr><td><strong>' + r.from + ' to ' + r.to + '</strong></td>';
+    html += '<td>' + (isHub ? '<span class="badge b-hub">Hub</span>' : '<span class="badge b-v">Spoke</span>') + '</td>';
+    html += '<td>' + r.n + '</td>';
+    html += '<td>' + load + '%<div class="bar" style="width:60px"><div class="bf" style="width:' + load + '%;' + (load < 30 ? 'background:var(--warn)' : '') + '"></div></div></td>';
+    html += '<td style="color:var(--ok)">$' + revR.toLocaleString() + '</td>';
+    html += '<td>$' + Math.round(fuelR).toLocaleString() + '</td>';
+    html += '<td>$' + feesR.toLocaleString() + '</td>';
+    html += '<td style="color:' + (pl >= 0 ? 'var(--ok)' : 'var(--bad)') + '"><span class="mn">' + (pl >= 0 ? '+' : '') + '$' + Math.round(pl).toLocaleString() + '</span></td></tr>';
+  });
+  document.getElementById('route-body').innerHTML = html;
+}
+
+// ── Pricing ──────────────────────────────────────────────────────
+/* adjSlider(k, v) — sets margin k to v (from range input), updates label, persists to
+   localStorage so book.html and other tabs read the current values. */
+function adjSlider(k, v) {
+  margins[k] = Math.max(1, Math.min(99, parseInt(v, 10)));
+  var lbl = document.getElementById(k + '-v');
+  if (lbl) lbl.textContent = margins[k] + '%';
+  localStorage.setItem('pca_margins', JSON.stringify(margins));
+  updatePricingImpact();
+}
+
+/* computeMarginScale() — ratio of current weighted-avg margin to baseline avg (24.5%).
+   Used by simRunDay() to scale revenue when margins change. */
+function computeMarginScale() {
+  var BASE_AVG = (18 + 22 + 26 + 32) / 4; // 24.5
+  var curr = (margins.sh + margins.mh + margins.lh + margins.intl) / 4;
+  return (1 + curr / 100) / (1 + BASE_AVG / 100);
+}
+
+/* updatePricingImpact() — triggered on every slider change.
+   Refreshes all P&L displays: pricing tab summary, per-aircraft table, route table,
+   simulation log, and the open day-detail panel (if any). */
+function updatePricingImpact() {
+  buildPricingAircraftTable();
+  buildRouteTable();
+  refreshSimUI();
+  if (_detailDayIdx >= 0) renderDayDetail();
+}
+
+/* addMinsToTime(t, m) — shifts a "HH:MM" string forward by m minutes, wrapping at 24 h. */
+function addMinsToTime(t, m) {
+  if (!m) return t;
+  var p = t.split(':');
+  var tot = parseInt(p[0], 10) * 60 + parseInt(p[1], 10) + m;
+  var h = Math.floor(tot / 60) % 24, mn = tot % 60;
+  return (h < 10 ? '0' : '') + h + ':' + (mn < 10 ? '0' : '') + mn;
+}
+
+/* buildPricingAircraftTable() — computes each aircraft's daily P&L from baseline leg data,
+   applies computeMarginScale() to revenue, and writes the pricing-tab table + summary. */
+function buildPricingAircraftTable() {
+  _buildFlightIdx();
+  var scale      = computeMarginScale();
+  var leasePerAc = Math.round(COST_LEASE / AIRCRAFT.length);
+
+  var rows = AIRCRAFT.map(function(ac) {
+    var rev = 0, fuel = 0, land = 0;
+    ac.legs.forEach(function(leg) {
+      var flt = _flightsByNum[leg.fn];
+      if (!flt) return;
+      var bm = mins(leg.arr) - mins(leg.dep);
+      if (bm <= 0) return;
+      var baseFare = getCpmFare(bm);
+      rev  += baseFare * flt.pax * scale;
+      fuel += (bm / 60) * 800 * 6.19;
+      land += 2000;
+    });
+    rev  = Math.round(rev);
+    fuel = Math.round(fuel);
+    var cost = fuel + land + leasePerAc;
+    return {tail:ac.tail, type:ac.type, base:ac.base, legs:ac.legs.length, rev:rev, cost:cost, pl:rev - cost};
+  });
+
+  var totalRev  = rows.reduce(function(s,r){return s+r.rev;},0);
+  var totalCost = rows.reduce(function(s,r){return s+r.cost;},0);
+  var totalPL   = totalRev - totalCost;
+
+  var revEl  = document.getElementById('pricing-total-rev');
+  var costEl = document.getElementById('pricing-total-cost');
+  var plEl   = document.getElementById('pricing-total-pl');
+  if (revEl)  revEl.textContent  = '$' + totalRev.toLocaleString();
+  if (costEl) costEl.textContent = '-$' + totalCost.toLocaleString();
+  if (plEl) {
+    plEl.textContent = (totalPL >= 0 ? '+' : '') + fmtM(totalPL);
+    plEl.style.color = totalPL >= 0 ? 'var(--ok)' : 'var(--bad)';
+  }
+
+  var tbody = document.getElementById('pricing-aircraft-body');
+  if (!tbody) return;
+  rows.sort(function(a,b){return b.pl - a.pl;});
+  var html = '';
+  rows.forEach(function(r) {
+    var plC = r.pl >= 0 ? 'var(--ok)' : 'var(--bad)';
+    html += '<tr>'+
+      '<td><span class="mn">'+r.tail+'</span></td>'+
+      '<td><span class="tag">'+r.type+'</span></td>'+
+      '<td style="font-size:10px;color:var(--dim)">'+r.base+'</td>'+
+      '<td>'+r.legs+'</td>'+
+      '<td style="color:var(--ok)">$'+r.rev.toLocaleString()+'</td>'+
+      '<td style="color:var(--bad)">-$'+r.cost.toLocaleString()+'</td>'+
+      '<td style="color:'+plC+'"><span class="mn">'+(r.pl>=0?'+':'')+fmtM(r.pl)+'</span></td>'+
+      '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+/* saveMargins() — visual feedback only (no backend endpoint in this prototype). */
+function saveMargins() {
+  var btn = event.target;
+  var orig = btn.textContent;
+  btn.textContent = 'Saved!';
+  btn.style.background = 'rgba(0,229,160,.2)';
+  setTimeout(function(){ btn.textContent = orig; btn.style.background = ''; }, 1500);
+}
+
+/* resetMargins() — restores default margins, resets all sliders, and persists to localStorage. */
+function resetMargins() {
+  var defs = {sh:18, mh:22, lh:26, intl:32};
+  Object.keys(defs).forEach(function(k){
+    margins[k] = defs[k];
+    var sl = document.getElementById(k + '-slider'); if (sl) sl.value = defs[k];
+    var vl = document.getElementById(k + '-v');      if (vl) vl.textContent = defs[k] + '%';
+  });
+  localStorage.setItem('pca_margins', JSON.stringify(margins));
+  updatePricingImpact();
+}
+
+// ── Simulation ───────────────────────────────────────────────────
+/* mkRng(seed) — deterministic xorshift32 PRNG seeded per day so each day's
+   random variance is reproducible (same seed always produces the same day result). */
+function mkRng(seed) {
+  var s = seed >>> 0 || 1;
+  return function(){ s^=s<<13; s^=s>>>17; s^=s<<5; return (s>>>0)/0xffffffff; };
+}
+
+/* simRunDay()
+   ────────────
+   Simulates one operational day using the CHALLENGES entry for that day index.
+
+   CHALLENGE PARAMETERS (defined in aircraft_schedule.js):
+     name           — human-readable event label (e.g. "Thunderstorm — ATL Hub")
+     weather_factor — fuel cost multiplier (1.0 = normal; 1.25 = 25% more fuel)
+     cancel_pct     — base cancellation probability (0.00–0.20)
+     delay_chance   — probability any given flight is delayed
+
+   COMPUTATION STEPS:
+     1. Draw raw random numbers from a deterministic mkRng(seed) PRNG seeded by
+        the day index, so the same day always produces the same result.
+     2. Compute active_flights = BASE_FLIGHTS × (1 - cancel_pct × noise).
+     3. Compute pax from the load factor adjusted for weather and randomness.
+     4. Compute CPM-based baseRev (pre-margin) using computeCpmAvgFarePerPax()
+        so revenue reflects the current ¢/nm slider.  Stored raw so
+        refreshSimUI() can rescale by computeMarginScale() without re-running.
+     5. Compute costs: fuel (weather-scaled), lease (fixed), landing fees
+        (proportional to active flights), CDG international fees (skipped if
+        heavy cancellations), maintenance (amplified by bad weather).
+     6. Push the entry onto simState.log and update cumulative totals. */
+function simRunDay() {
+  if (simState.day >= 14){ alert('All 14 days complete. Use Reset to start over.'); return; }
+  var d   = simState.day;
+  var ch  = CHALLENGES[d];
+  var rng = mkRng(d * 2654435761 + 1);
+
+  var raw_flights    = BASE_FLIGHTS;
+  var cancelled      = Math.round(raw_flights * ch.cancel_pct * (0.7 + rng() * 0.6));
+  var active_flights = raw_flights - cancelled;
+
+  var lf_base = BASE_PAX / raw_flights / 132;
+  var lf      = Math.min(0.97, lf_base * (1 + rng()*0.08 - 0.04));
+  var pax     = Math.round(active_flights * 132 * lf * (1 - ch.cancel_pct * 0.5));
+
+  // Use CPM-based avg fare so revenue reflects the current ¢/nm slider setting.
+  // Stored as pre-margin so refreshSimUI() can scale live when margins change.
+  var rev_per_pax = computeCpmAvgFarePerPax();
+  var baseRev = Math.round(pax * rev_per_pax * (0.95 + rng() * 0.10));
+  var fuel = Math.round(COST_FUEL * ch.weather_factor * (1 + rng()*0.04 - 0.02) * (active_flights / raw_flights));
+  var lease= COST_LEASE;
+  var land = Math.round(COST_LANDING * (active_flights / raw_flights));
+  var cdg  = (ch.cancel_pct > 0.05 && rng() < 0.2) ? 0 : COST_CDG;
+  var maint= Math.round(COST_MAINT * (1 + Math.max(0, ch.weather_factor - 1) * 2));
+  var delays= Math.round(active_flights * ch.delay_chance * (0.6 + rng() * 0.8));
+  var total_cost = fuel + lease + land + cdg + maint;
+
+  var entry = {
+    day:d+1, name:ch.name, flights:active_flights, cancelled:cancelled,
+    delays:delays, pax:pax, baseRev:baseRev, cost:total_cost,
+    fuel:fuel, lease:lease, land:land, cdg:cdg, maint:maint,
+    weather_factor:ch.weather_factor, cancel_pct:ch.cancel_pct
+  };
+  simState.day++;
+  simState.log.push(entry);
+  simState.cumPax  += pax;
+  simState.cumCost += total_cost;
+  refreshSimUI();
+}
+
+/* simRunAll() — runs all remaining days in a loop (calls simRunDay() up to 14 times) */
+function simRunAll() {
+  if (simState.day >= 14){ alert('All 14 days complete. Use Reset to start over.'); return; }
+  while (simState.day < 14) simRunDay();
+}
+
+/* simReset() — resets simState to day 0 */
+function simReset() {
+  simState = {day:0, log:[], cumPax:0, cumCost:0};
+  hideDayDetail();
+  refreshSimUI();
+}
+
+/* fmtM(n) — formats a dollar amount: ≥1M → "$X.XXM", ≥1k → "$Xk", else "$X" (with sign) */
+function fmtM(n){ var abs=Math.abs(n),s=n<0?'-':''; return abs>=1e6?s+'$'+(abs/1e6).toFixed(2)+'M':abs>=1000?s+'$'+(abs/1000).toFixed(0)+'k':s+'$'+Math.round(abs).toLocaleString(); }
+/* fmtK(n) — formats a passenger count: ≥1k → "X.Xk", else raw number */
+function fmtK(n){ return n>=1000?(n/1000).toFixed(1)+'k':n.toLocaleString(); }
+
+/* refreshSimUI()
+   Re-renders the simulation panel after each day is run or when margins change.
+   Recomputes rev and pl from stored baseRev × computeMarginScale() so all P&L
+   numbers update live without re-running the simulation. */
+function refreshSimUI() {
+  var d    = simState.day, log = simState.log;
+  var scale = computeMarginScale();
+
+  // Build a display copy of the log with live margin applied
+  var scaledLog = log.map(function(e) {
+    var rev = Math.round(e.baseRev * scale);
+    return {
+      day:e.day, name:e.name, flights:e.flights, cancelled:e.cancelled,
+      delays:e.delays, pax:e.pax, rev:rev, cost:e.cost, pl: rev - e.cost
+    };
+  });
+
+  var pct  = Math.round(d / 14 * 100);
+  var prog = document.getElementById('sim-prog'); if (prog) prog.style.width = pct + '%';
+  var lbl  = document.getElementById('sim-day-label'); if (lbl) lbl.textContent = 'Day ' + d + ' / 14';
+
+  var cumRev  = scaledLog.reduce(function(s,e){return s+e.rev;},0);
+  var cumCost = log.reduce(function(s,e){return s+e.cost;},0);
+  var cumPL   = cumRev - cumCost;
+
+  var sum = document.getElementById('sim-summary');
+  if (sum) {
+    sum.innerHTML =
+      '<div class="row"><span style="color:var(--dim)">Days run</span><span class="mn">'+d+' / 14</span></div>'+
+      '<div class="row"><span style="color:var(--dim)">Total passengers</span><span>'+fmtK(simState.cumPax)+'</span></div>'+
+      '<div class="row"><span style="color:var(--dim)">Total revenue</span><span style="color:var(--ok)">'+fmtM(cumRev)+'</span></div>'+
+      '<div class="row"><span style="color:var(--dim)">Total operating cost</span><span style="color:var(--bad)">-'+fmtM(cumCost)+'</span></div>'+
+      '<div class="divl"></div>'+
+      '<div class="row"><strong>Cumulative P&L</strong><strong style="color:'+(cumPL>=0?'var(--ok)':'var(--bad)')+'"><span class="mn">'+(cumPL>=0?'+':'')+fmtM(cumPL)+'</span></strong></div>';
+  }
+
+  var tbody = document.getElementById('sim-log');
+  if (tbody) {
+    var html = '';
+    for (var i = 0; i < 14; i++) {
+      var ch = CHALLENGES[i];
+      if (i < d) {
+        var e = scaledLog[i], plColor = e.pl >= 0 ? 'var(--ok)' : 'var(--bad)';
+        html += '<tr style="cursor:pointer" onclick="showDayDetail('+i+')" title="Click to view per-aircraft detail">'+
+                '<td><span class="mn" style="color:var(--lav)">D'+e.day+'</span></td>'+
+                '<td style="font-size:11px;color:var(--dim)">'+e.name+'</td>'+
+                '<td>'+e.flights+(e.cancelled>0?'<span style="color:var(--bad);font-size:10px"> -'+e.cancelled+'&#x2717;</span>':'')+'</td>'+
+                '<td>'+fmtK(e.pax)+'</td>'+
+                '<td style="color:var(--ok)">'+fmtM(e.rev)+'</td>'+
+                '<td style="color:'+plColor+'"><span class="mn">'+(e.pl>=0?'+':'')+fmtM(e.pl)+'</span></td>'+
+                '<td><span class="badge b-ok">&#x2713; Done</span></td></tr>';
+      } else if (i === d) {
+        html += '<tr style="background:rgba(107,95,255,.05)">'+
+                '<td><span class="mn" style="color:var(--warn)">D'+(i+1)+'</span></td>'+
+                '<td style="font-size:11px;color:var(--warn)">'+ch.name+'</td>'+
+                '<td colspan="4" style="color:var(--dim);font-size:11px">&#x23F3; Awaiting execution &mdash; click Run Next Day</td>'+
+                '<td><span class="badge b-v">Next</span></td></tr>';
+      } else {
+        html += '<tr style="opacity:.5">'+
+                '<td><span class="mn" style="color:var(--dim)">D'+(i+1)+'</span></td>'+
+                '<td style="font-size:11px;color:var(--dim)">'+ch.name+'</td>'+
+                '<td>--</td><td>--</td><td>--</td><td>--</td>'+
+                '<td><span class="badge b-pk">Pending</span></td></tr>';
+      }
+    }
+    tbody.innerHTML = html;
+  }
+  buildSparkbar('sim-plbars-mini', scaledLog, 14);
+}
+
+/* buildSparkbar(elId, log, total)
+   Renders a mini bar chart for daily P&L. Green bars go up for profit days,
+   red bars go down for loss days. Unrun days show a dashed placeholder. */
+function buildSparkbar(elId, log, total) {
+  var el = document.getElementById(elId); if (!el) return;
+  var maxAbs = 0;
+  for (var i = 0; i < log.length; i++) maxAbs = Math.max(maxAbs, Math.abs(log[i].pl));
+  if (maxAbs === 0) maxAbs = 1;
+  var html = '';
+  for (var i = 0; i < total; i++) {
+    html += '<div style="display:flex;flex-direction:column;align-items:center;flex:1">';
+    if (i < log.length) {
+      var pl = log[i].pl, h = Math.max(4, Math.round(Math.abs(pl) / maxAbs * 100));
+      if (pl >= 0) { html += '<div class="pb p" style="height:'+h+'%"></div>'; }
+      else         { html += '<div style="flex:1"></div><div class="pb n" style="height:'+h+'%"></div>'; }
+    } else {
+      html += '<div style="flex:1;border-bottom:1px dashed rgba(179,157,255,.12);width:100%"></div>';
+    }
+    html += '<div class="pbl"' + (i >= log.length ? ' style="color:rgba(112,112,160,.35)"' : '') + '>D'+(i+1)+'</div>';
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+// ── Per-aircraft day detail ──────────────────────────────────────
+/* _flightsByNum: lazily-built index of FLIGHTS keyed by flight number (fn). */
+var _flightsByNum = null;
+var _detailDayIdx = -1;
+var _detailFilter = 'ALL';
+
+function _buildFlightIdx() {
+  if (_flightsByNum) return;
+  _flightsByNum = {};
+  FLIGHTS.forEach(function(f){ _flightsByNum[f.num] = f; });
+}
+
+/* showDayDetail(dayIdx) — called when a completed sim-log row is clicked.
+   Builds and shows the per-aircraft breakdown for that simulation day. */
+function showDayDetail(dayIdx) {
+  _buildFlightIdx();
+  if (!simState.log[dayIdx]) return;
+  _detailDayIdx = dayIdx;
+  _detailFilter = 'ALL';
+  var panel = document.getElementById('sim-day-detail');
+  ['ALL','ATL','DFW','DEN','ORD','INTL'].forEach(function(h){
+    var b = document.getElementById('ddf-'+h);
+    if (b) b.className = b.className.replace(' bp','') + (h === 'ALL' ? ' bp' : '');
+  });
+  renderDayDetail();  // renderDayDetail sets title/challenge header with live P&L
+  if (panel) { panel.style.display = 'block'; panel.scrollIntoView({behavior:'smooth', block:'nearest'}); }
+}
+
+function hideDayDetail() {
+  var panel = document.getElementById('sim-day-detail');
+  if (panel) panel.style.display = 'none';
+  _detailDayIdx = -1;
+}
+
+function filterDayDetail(hub) {
+  _detailFilter = hub;
+  ['ALL','ATL','DFW','DEN','ORD','INTL'].forEach(function(h){
+    var b = document.getElementById('ddf-'+h);
+    if (b) b.className = b.className.replace(' bp','') + (h === hub ? ' bp' : '');
+  });
+  renderDayDetail();
+}
+
+/* renderDayDetail() — (re)renders the aircraft table for the selected day + filter.
+   Rules:
+     - First cancellation on any aircraft grounds it for the rest of the day.
+     - Delays accumulate: each new delay on a leg adds to accDelay, shifting every
+       subsequent leg's dep/arr times. Carried delay is shown in the badge.
+     - RNG always consumes exactly 3 values per leg for sequence stability.
+     - Per-aircraft P&L (with live margins) shown as subtotal row. */
+function renderDayDetail() {
+  if (_detailDayIdx < 0) return;
+  var dayIdx = _detailDayIdx;
+  var e   = simState.log[dayIdx];
+  var ch  = CHALLENGES[dayIdx];
+  var scale      = computeMarginScale();
+  var leasePerAc = Math.round(COST_LEASE / AIRCRAFT.length);
+
+  // Update header with live P&L
+  var liveRev = Math.round(e.baseRev * scale);
+  var livePL  = liveRev - e.cost;
+  var titleEl = document.getElementById('day-detail-title');
+  var chalEl  = document.getElementById('day-detail-challenge');
+  if (titleEl) titleEl.textContent = 'Day ' + e.day + ' \u2014 Aircraft Detail';
+  if (chalEl)  chalEl.textContent  = e.name + ' \u2014 ' + e.flights + ' active, ' + fmtK(e.pax) +
+                                     ' pax \u00B7 Day P\u0026L: ' + (livePL >= 0 ? '+' : '') + fmtM(livePL);
+
+  var rng = mkRng((dayIdx + 1) * 1234567 + 777);
+  var content = document.getElementById('day-detail-content');
+  if (!content) return;
+
+  // Pass 1: per-aircraft cascade logic
+  var acData = AIRCRAFT.map(function(ac) {
+    var grounded = false;
+    var accDelay = 0;   // cumulative delay carried into each leg's departure
+
+    var legs = ac.legs.map(function(leg) {
+      var r1 = rng(), r2 = rng(), r3 = rng();  // always consume 3 per leg
+
+      var flt = _flightsByNum[leg.fn];
+      var bm  = flt ? Math.max(1, mins(leg.arr) - mins(leg.dep)) : 120;
+      var depDelay = accDelay;  // delay at departure = accumulated from previous legs
+
+      if (grounded) {
+        return {
+          leg:leg, status:'grounded',
+          badge:'<span class="badge b-bad">Grounded</span>',
+          pax:null, load:null, depDelay:depDelay, arrDelay:depDelay,
+          rev:0, fuel:0, land:0
+        };
+      }
+
+      var thisDelay = 0, status, badge;
+
+      if (r1 < ch.cancel_pct) {
+        status   = 'cancelled';
+        badge    = '<span class="badge b-bad">Cancelled</span>';
+        grounded = true;
+      } else {
+        if (r2 < ch.delay_chance) {
+          thisDelay = Math.round(15 + r3 * 60);
+          accDelay += thisDelay;
+        }
+        if (depDelay === 0 && thisDelay === 0) {
+          status = 'on-time';
+          badge  = '<span class="badge b-ok">On-time</span>';
+        } else {
+          status = 'delayed';
+          var bdgParts = '+' + accDelay + 'min';
+          if (thisDelay > 0 && depDelay > 0) bdgParts += ' (+' + thisDelay + ' added)';
+          badge = '<span class="badge b-warn">' + bdgParts + '</span>';
+        }
+      }
+
+      var arrDelay = accDelay;
+      var adjPax = null, adjLoad = null, legRev = 0, legFuel = 0;
+      if (status !== 'cancelled') {
+        if (flt) {
+          adjPax  = Math.round(flt.pax * (1 - ch.cancel_pct * 0.3));
+          adjLoad = flt.seats > 0 ? Math.round(adjPax / flt.seats * 100) : null;
+          var baseFare = getCpmFare(bm);
+          legRev = Math.round(baseFare * adjPax * scale);
+        }
+        legFuel = Math.round((bm / 60) * 800 * 6.19);
+      }
+
+      return {
+        leg:leg, status:status, badge:badge,
+        pax:adjPax, load:adjLoad, depDelay:depDelay, arrDelay:arrDelay,
+        rev:legRev, fuel:legFuel, land: status !== 'cancelled' ? 2000 : 0
+      };
+    });
+
+    var acRev  = legs.reduce(function(s,l){return s+l.rev;},0);
+    var acFuel = legs.reduce(function(s,l){return s+l.fuel;},0);
+    var acLand = legs.reduce(function(s,l){return s+l.land;},0);
+    var acCost = acFuel + acLand + leasePerAc;
+    return {ac:ac, legs:legs, rev:acRev, cost:acCost, pl:acRev - acCost};
+  });
+
+  // Summary counts (all aircraft, pre-filter)
+  var totOnTime = 0, totDelayed = 0, totCancelled = 0;
+  acData.forEach(function(d){ d.legs.forEach(function(ld){
+    if (ld.status === 'cancelled' || ld.status === 'grounded') totCancelled++;
+    else if (ld.status === 'delayed') totDelayed++;
+    else totOnTime++;
+  }); });
+  var sumEl = document.getElementById('day-detail-summary');
+  if (sumEl) sumEl.innerHTML =
+    '<span style="color:var(--ok)">' + totOnTime + ' on-time</span> &nbsp;'+
+    '<span style="color:var(--warn)">' + totDelayed + ' delayed</span> &nbsp;'+
+    '<span style="color:var(--bad)">' + totCancelled + ' cancelled/grounded</span>';
+
+  // Pass 2: render filtered aircraft
+  var html = '<table style="width:100%;font-size:11px">';
+  html += '<thead><tr><th>Tail</th><th>Type</th><th>Hub</th><th>Flight</th><th>Route</th><th>Dep</th><th>Arr</th><th>Status</th><th>Pax</th><th>Load%</th></tr></thead><tbody>';
+
+  acData.forEach(function(d) {
+    var ac = d.ac;
+    var hubCat = (ac.type === 'A359') ? 'INTL' : ac.base;
+    if (_detailFilter !== 'ALL' && hubCat !== _detailFilter) return;
+
+    d.legs.forEach(function(ld, idx) {
+      var isDead = ld.status === 'cancelled' || ld.status === 'grounded';
+      html += '<tr' + (isDead ? ' style="opacity:.45"' : '') + '>';
+      html += '<td' + (idx === 0 ? '' : ' style="color:transparent;font-size:0"') + '><span class="mn">' + ac.tail + '</span></td>';
+      html += '<td' + (idx === 0 ? '' : ' style="color:transparent;font-size:0"') + '><span class="tag">' + ac.type + '</span></td>';
+      html += '<td' + (idx === 0 ? '' : ' style="color:transparent;font-size:0"') + ' style="font-size:10px;color:var(--dim)">' + ac.base + '</td>';
+      html += '<td><span class="mn" style="color:var(--lav);font-size:10px">' + ld.leg.fn + '</span></td>';
+      html += '<td>' + ld.leg.fr + ' &rarr; ' + ld.leg.to + '</td>';
+      var depStr = addMinsToTime(ld.leg.dep, ld.depDelay);
+      var arrStr = isDead ? '&mdash;' : addMinsToTime(ld.leg.arr, ld.arrDelay);
+      html += '<td style="font-size:10px;' + (ld.depDelay > 0 ? 'color:var(--warn)' : 'color:var(--dim)') + '">' + depStr + '</td>';
+      html += '<td style="font-size:10px;' + (ld.arrDelay > 0 && !isDead ? 'color:var(--warn)' : 'color:var(--dim)') + '">' + arrStr + '</td>';
+      html += '<td>' + ld.badge + '</td>';
+      html += '<td>' + (ld.pax !== null ? ld.pax : '&mdash;') + '</td>';
+      html += '<td>' + (ld.load !== null ? ld.load + '%' : '&mdash;') + '</td>';
+      html += '</tr>';
+    });
+    // Per-aircraft subtotal row
+    var plC = d.pl >= 0 ? 'var(--ok)' : 'var(--bad)';
+    html += '<tr style="background:rgba(107,95,255,.07);font-size:10px">';
+    html += '<td colspan="4" style="text-align:right;color:var(--dim);padding-right:8px">' + ac.tail + ' subtotal</td>';
+    html += '<td colspan="2" style="color:var(--dim)">rev $' + d.rev.toLocaleString() + ' &nbsp; cost -$' + d.cost.toLocaleString() + '</td>';
+    html += '<td colspan="4" style="color:' + plC + '"><strong>' + (d.pl >= 0 ? '+' : '') + fmtM(d.pl) + '</strong></td>';
+    html += '</tr>';
+    html += '<tr style="height:4px"><td colspan="10"></td></tr>';
+  });
+
+  html += '</tbody></table>';
+  content.innerHTML = html;
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+/* init() — page startup:
+   1. Apply theme, verify login
+   2. Guard: non-Admin users are immediately redirected to employee.html
+   3. Set up nav, load airports + aircraft (from DB) + pricing in parallel
+   4. Populate dropdowns, build fleet/routes tables, initialize empty simulation UI */
+async function init() {
+  setupTheme();
+  var auth = checkAuth();
+  if (!auth) return;
+  if (auth.role !== 'Admin') { window.location.href = 'employee.html'; return; }
+  setupNav(auth);
+  await Promise.all([loadAirports(), loadAircraft(), loadPricing()]);
+  // Restore margin slider positions
+  ['sh','mh','lh','intl'].forEach(function(k){
+    var sl = document.getElementById(k+'-slider'); if (sl) sl.value = margins[k];
+    var vl = document.getElementById(k+'-v');      if (vl) vl.textContent = margins[k]+'%';
+  });
+  // Restore CPM slider position and sample label
+  var cpm = getCpm();
+  var csl = document.getElementById('cpm-slider'); if (csl) csl.value = cpm;
+  var cvl = document.getElementById('cpm-v');      if (cvl) cvl.textContent = cpm + '¢/nm';
+  var csp = document.getElementById('cpm-sample'); if (csp) csp.textContent = 'e.g. 500 nm economy flight = $' + Math.max(49, Math.round(500 * cpm / 100));
+  applyAutoRoutes();
+  populateSels();
+  buildFleet();
+  buildFleetModelStats();
+  buildRouteTable();
+  refreshSimUI();
+  updatePricingImpact();
+}
+
+init();
+</script>
+</body>
+</html>

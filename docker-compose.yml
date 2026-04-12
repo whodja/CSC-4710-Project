@@ -1,12 +1,27 @@
+# ================================================
+# docker-compose.yml — Panther Cloud Air
+# Defines two services:
+#   mariadb  — MariaDB 10.11 database server
+#   web      — Flask API + front-end (waits for mariadb)
+#
+# To start:  docker compose up --build
+# Web UI:    http://localhost:5001
+# DB port:   3306 (mapped directly to host)
+# ================================================
+
 services:
+
+  # ── Database service ──────────────────────────────────────────
   mariadb:
     image: mariadb:10.11
     container_name: mariadb-compose
     environment:
-      MYSQL_ROOT_PASSWORD: TheFutureUnemployed
-      MYSQL_DATABASE: timetable
+      MYSQL_ROOT_PASSWORD: TheFutureUnemployed   # Root DB password
+      MYSQL_DATABASE: timetable                  # Database created on first run
     volumes:
-      - project_data:/var/lib/mysql
+      - project_data:/var/lib/mysql              # Named volume keeps data between restarts
+      # SQL init scripts are executed in filename order on first start.
+      # Each file creates and seeds one group of tables.
       - ./sql/01_aircraft.sql:/docker-entrypoint-initdb.d/01_aircraft.sql
       - ./sql/02_airports.sql:/docker-entrypoint-initdb.d/02_airports.sql
       - ./sql/03_flight_distances.sql:/docker-entrypoint-initdb.d/03_flight_distances.sql
@@ -16,34 +31,37 @@ services:
       - ./sql/07_pricing.sql:/docker-entrypoint-initdb.d/07_pricing.sql
       - ./sql/08_users.sql:/docker-entrypoint-initdb.d/08_users.sql
     ports:
-      - "3306:3306"
+      - "3306:3306"                              # Expose DB port to host for local tools
     networks:
       - mariadb_network
     healthcheck:
+      # MariaDB must finish InnoDB init before the web container starts
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # ── Web / API service ─────────────────────────────────────────
   web:
-    build: .
+    build: .                                     # Build image from local Dockerfile
     container_name: flask-web
     ports:
-      - "5001:5000"
+      - "5001:5000"                              # Host 5001 → Flask container 5000
     depends_on:
       mariadb:
-        condition: service_healthy
+        condition: service_healthy               # Wait until DB healthcheck passes
     environment:
-      DB_HOST: mariadb
+      DB_HOST: mariadb                           # Docker service name used as hostname
       DB_USER: root
       DB_PASSWORD: TheFutureUnemployed
       DB_NAME: timetable
     networks:
       - mariadb_network
 
+# ── Shared resources ──────────────────────────────────────────
 networks:
   mariadb_network:
-    driver: bridge
+    driver: bridge                               # Isolated bridge network for the two services
 
 volumes:
-  project_data:
+  project_data:                                  # Persists database files across container restarts

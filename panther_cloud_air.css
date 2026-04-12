@@ -298,3 +298,77 @@ code  { background: rgba(107,95,255,.1); padding: 1px 5px; border-radius: 3px; f
   .g2, .g3, .g4 { grid-template-columns: 1fr; }
   .stats { grid-template-columns: repeat(2,1fr); }
 }
+
+/* ── Theme Toggle Switch ─────────────────────────────────────── */
+.theme-sw-wrap {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--dim);
+}
+.theme-sw {
+  position: relative; display: inline-block;
+  width: 34px; height: 18px; cursor: pointer;
+}
+.theme-sw input { opacity: 0; width: 0; height: 0; position: absolute; }
+.theme-sw-slider {
+  position: absolute; inset: 0;
+  background: rgba(179,157,255,0.15);
+  border: 1px solid var(--bord);
+  border-radius: 9px;
+  transition: background .25s, border-color .25s;
+}
+.theme-sw-slider::before {
+  content: '';
+  position: absolute;
+  width: 12px; height: 12px;
+  left: 2px; top: 50%; transform: translateY(-50%);
+  background: var(--dim);
+  border-radius: 50%;
+  transition: left .25s, background .25s;
+}
+.theme-sw input:checked + .theme-sw-slider {
+  background: rgba(61,49,204,0.2);
+  border-color: var(--v);
+}
+.theme-sw input:checked + .theme-sw-slider::before {
+  left: 20px;
+  background: var(--lav);
+}
+
+/* ── Light Mode ─────────────────────────────────────────────── */
+body.light {
+  --bg:   #f0f4ff;
+  --bg2:  #e4eaf7;
+  --v:    #3d31cc;
+  --pk:   #b800e0;
+  --pk2:  #c040d8;
+  --lav:  #3d31cc;
+  --text: #1a1a3e;
+  --dim:  #5858a0;
+  --bord: rgba(61,49,204,0.2);
+  --ok:   #007a5e;
+  --warn: #c07000;
+  --bad:  #c0142a;
+  --amb:  #c05500;
+}
+body.light input,
+body.light select,
+body.light textarea    { background: rgba(0,0,0,0.05); color: var(--text); }
+body.light select option { background: var(--bg2); color: var(--text); }
+body.light .lcard      { background: rgba(255,255,255,.92); }
+body.light .side       { background: rgba(230,235,255,.97); }
+body.light .mc2        { background: rgba(255,255,255,.95); }
+body.light .qout       { background: rgba(0,0,0,.04); }
+body.light .box        { background: rgba(255,255,255,.65); }
+body.light .stat       { background: rgba(255,255,255,.65); }
+body.light .fc         { background: rgba(255,255,255,.55); }
+body.light .fc:hover,
+body.light .fc.sel     { background: rgba(61,49,204,.07); }
+body.light tr:hover td { background: rgba(61,49,204,.04); }
+body.light td          { border-bottom-color: rgba(61,49,204,.1); }
+body.light .bar        { background: rgba(0,0,0,.08); }
+body.light .prog-bar   { background: rgba(0,0,0,.08); }
+body.light .al-i       { background: rgba(61,49,204,.08); border-color: rgba(61,49,204,.25); }
+body.light .al-w       { background: rgba(180,100,0,.08); border-color: rgba(180,100,0,.28); }
+body.light .al-o       { background: rgba(0,120,80,.07);  border-color: rgba(0,120,80,.22); }
+body.light .cov-card   { background: rgba(255,255,255,.55); }
+body.light .tabs       { border-bottom-color: rgba(61,49,204,.2); }

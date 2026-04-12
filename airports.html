@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<!-- airports.html — Panther Cloud Air Airport Network
+     ══════════════════════════════════════════════��════════
+
+     PURPOSE
+     ───────
+     Displays the full PCA airport network: 30 US airports + Paris CDG (31 total).
+     Intended for passengers and staff to browse the network, identify hubs,
+     and understand which airport pairs are excluded from service.
+
+     DATA SOURCE
+     ───────────
+     Primary:  loadAirports() in shared.js fetches /api/airports (Flask → MariaDB).
+     Fallback: the static AIRPORTS array in aircraft_schedule.js, used if the DB
+               is offline.  In fallback mode city names are blank.
+
+     150-MILE PROXIMITY EXCLUSION RULE
+     ───────────────────────────────────
+     Airports within 150 statute miles of each other have NO direct flights and
+     NO demand recorded between them.  The rule is enforced by the TOO_CLOSE Set
+     in aircraft_schedule.js and checked by isTooClose() in shared.js.
+     The exclusion pairs are listed in the alert banner on the page and in the
+     "Nearby (no service)" column of the airport table.
+
+     FILTERING
+     ─────────
+     The dropdown at the top calls filterApts() with 'all', 'hub', or 'non'.
+     buildApts(filter) re-renders the table with the matching subset.
+
+     HUB AIRPORTS
+     ────────────
+     ATL, DFW, DEN, ORD, JFK are the five PCA hubs.  They receive 11 gates
+     each and are highlighted in the Hub column.  Non-hub spokes get 1–5 gates
+     scaled by metro population (capped at 5). -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Panther Cloud Air — Airports</title>
+  <!-- Orbitron = display font; DM Sans = body text -->
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <link href="panther_cloud_air.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- Shared top navigation bar.
+     Employee/Admin-only nav buttons (#nb-employee, #nb-admin) start hidden;
+     setupNav() in shared.js reveals them based on the user's role. -->
+<nav id="nav">
+  <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
+  <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
+  <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
+  <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
+  <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
+  <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
+  <div id="nav-right">
+    <div class="theme-sw-wrap">
+      <span>Light</span>
+      <label class="theme-sw">
+        <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+        <span class="theme-sw-slider"></span>
+      </label>
+    </div>
+    <span id="nav-name"></span>   <!-- filled by setupNav() with the logged-in username -->
+    <span id="nav-role"></span>   <!-- filled by setupNav() with the user's role badge -->
+    <button class="nb-out" onclick="doLogout()">Sign out</button>
+  </div>
+</nav>
+
+<!-- Main airport network page content -->
+<div id="pg-airports" class="pg" style="display:block">
+  <div class="ph">
+    <div>
+      <h1>Airport Network</h1>
+      <div class="sub">30 US airports + Paris CDG &mdash; 150-mile exclusion rule applied</div>
+    </div>
+    <!-- Dropdown triggers filterApts() to show all airports, hubs only, or non-hubs only -->
+    <select style="width:auto" onchange="filterApts(this.value)">
+      <option value="all">All Airports</option>
+      <option value="hub">Hubs Only</option>
+      <option value="non">Non-Hubs</option>
+    </select>
+  </div>
+
+  <!-- Alert banner listing all airport pairs excluded by the 150-mile proximity rule.
+       These pairs appear in the TOO_CLOSE constant in aircraft_schedule.js. -->
+  <div class="al al-w">
+    <span>rule:</span>
+    <span style="color:var(--dim)">Airports within <strong style="color:var(--warn)">150 miles</strong> have no service or demand between them:
+      AUS&harr;IAH &bull; BWI&harr;DCA,IAD,PHL &bull; DCA&harr;IAD,PHL &bull;
+      EWR&harr;JFK,LGA,PHL &bull; FLL&harr;MIA &bull; IAD&harr;PHL &bull;
+      JFK&harr;LGA,PHL &bull; LAX&harr;SAN &bull; LGA&harr;PHL &bull;
+      MCO&harr;TPA &bull; PDX&harr;SEA
+    </span>
+  </div>
+
+  <!-- Airport table: columns are rank, IATA code, city, full name, metro population,
+       gate count (hubs get 11 gates; spokes scaled by population, capped at 5),
+       hub/international badge, and nearby airports blocked by the 150-mile rule. -->
+  <div class="tw" style="margin-top:12px">
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th><th>IATA</th><th>City</th><th>Airport Name</th>
+          <th>Metro Pop</th><th>Gates</th><th>Hub</th><th>Nearby (no service)</th>
+        </tr>
+      </thead>
+      <!-- #apt-body is populated dynamically by buildApts() below -->
+      <tbody id="apt-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- aircraft_schedule.js: static data constants (AIRPORTS, TOO_CLOSE, FLIGHTS, DEMAND, etc.)
+     panther_cloud_air_shared.js: shared helpers (setupTheme, checkAuth, setupNav, loadAirports, go, etc.) -->
+<script src="aircraft_schedule.js"></script>
+<script src="panther_cloud_air_shared.js"></script>
+<script>
+'use strict';
+
+/* buildApts(filter)
+   ──────────────────
+   Renders the airport table for the given filter value ('all' | 'hub' | 'non').
+
+   Steps:
+   1. Build a `near` map: iata → [list of too-close airport codes].
+      TOO_CLOSE stores canonically sorted "A-B" strings; we need both directions.
+   2. Filter AIRPORTS based on the hub flag.
+   3. For each airport, compute gate count:
+        Hub airports  → 11 gates (per project spec)
+        International non-hub (CDG) → shown as '--' (airport infrastructure differs)
+        Spoke airports → min(floor(metro_pop_millions), 5), minimum 1
+   4. Inject the resulting HTML into #apt-body.
+
+   AIRPORTS is populated by loadAirports() from the /api/airports endpoint.
+   If the API was offline, AIRPORTS falls back to the static array in
+   aircraft_schedule.js (pop values may differ slightly). */
+function buildApts(filter) {
+  // Build a map of iata -> [nearby iata codes] for the "Nearby (no service)" column
+  var near = {};
+  TOO_CLOSE.forEach(function(k){
+    var p = k.split('-');
+    if (!near[p[0]]) near[p[0]] = [];
+    if (!near[p[1]]) near[p[1]] = [];
+    near[p[0]].push(p[1]);
+    near[p[1]].push(p[0]);
+  });
+  var rows = AIRPORTS.filter(function(a){
+    return filter === 'hub' ? a.hub : filter === 'non' ? !a.hub : true;
+  });
+  var html = '';
+  rows.forEach(function(a){
+    // Gate count: hubs always get 11; international non-hubs show '--'; spokes get 1-5 based on population
+    var g  = a.hub ? 11 : a.intl ? '--' : Math.min(Math.floor(a.pop || 0), 5) || 1;
+    // Build badge list of nearby airports excluded from service
+    var nb = (near[a.iata] || []).map(function(c){
+      return '<span class="badge b-tc" style="margin-right:2px">' + c + '</span>';
+    }).join('');
+    html += '<tr>';
+    html += '<td>' + a.rank + '</td>';
+    html += '<td><strong class="mn" style="color:var(--lav)">' + a.iata + '</strong></td>';
+    html += '<td>' + a.city + '</td>';
+    html += '<td>' + a.name + '</td>';
+    html += '<td>' + (a.pop ? a.pop.toFixed(2) + 'M' : '--') + '</td>';
+    html += '<td><strong style="color:' + (a.hub ? 'var(--amb)' : 'var(--text)') + '">' + g + '</strong></td>';
+    html += '<td>' + (a.hub ? '<span class="badge b-hub">HUB</span>' : a.intl ? '<span class="badge b-pk">Intl</span>' : '--') + '</td>';
+    html += '<td>' + (nb || '<span style="font-size:10px;color:var(--dim)">none</span>') + '</td>';
+    html += '</tr>';
+  });
+  document.getElementById('apt-body').innerHTML = html;
+}
+
+/* filterApts(v) — called by the dropdown onChange; delegates to buildApts */
+function filterApts(v) { buildApts(v); }
+
+/* init() — entry point:
+   1. Apply saved theme preference
+   2. Verify the user is logged in (redirect to login.html if not)
+   3. Show correct nav links for the user's role
+   4. Load airport data from /api/airports (or fall back to static)
+   5. Render the default "all airports" table */
+async function init() {
+  setupTheme();
+  var auth = checkAuth();
+  if (!auth) return;
+  setupNav(auth);
+  await loadAirports();
+  buildApts('all');
+}
+
+init();
+</script>
+</body>
+</html>

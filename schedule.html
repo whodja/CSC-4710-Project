@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<!-- schedule.html — Panther Cloud Air Daily Flight Schedule
+     ═══════════════════════════════════════════════════════════
+
+     PURPOSE
+     ───────
+     Displays all scheduled flights for today, drawn entirely from the static
+     FLIGHTS array in aircraft_schedule.js (245 flights across 51 aircraft).
+     Accessible to all authenticated users (passenger-facing and staff).
+
+     FILTERS
+     ───────
+     Origin (#sf-from), Destination (#sf-to), and Aircraft Type (#sf-type)
+     dropdowns filter the FLIGHTS array client-side — no API call needed.
+     filterSched() applies all three simultaneously; resetSched() clears them.
+     Origin and destination selects are populated by populateSels() in shared.js.
+
+     LOAD FACTOR VISUALIZATION
+     ─────────────────────────
+     Each row shows a small progress bar (pax / seats × 100%).
+     Bars below 30% capacity turn yellow (CSS color var(--warn)) to flag
+     under-loaded flights that may need attention.
+
+     QUICK-BOOK INTEGRATION
+     ──────────────────────
+     Every row has a "Book" button that calls quickBook(fr, to):
+       1. Stores the origin/destination in sessionStorage under
+          'pca_qb_from' / 'pca_qb_to'.
+       2. Navigates to book.html.
+       3. book.html's init() detects those keys, pre-fills the search form,
+          and immediately runs doSearch() so the user lands on results
+          for that exact route. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Panther Cloud Air — Schedule</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <link href="panther_cloud_air.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- Shared navigation bar (role-aware nav buttons revealed by setupNav()) -->
+<nav id="nav">
+  <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
+  <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
+  <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
+  <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
+  <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
+  <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
+  <div id="nav-right">
+    <div class="theme-sw-wrap">
+      <span>Light</span>
+      <label class="theme-sw">
+        <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+        <span class="theme-sw-slider"></span>
+      </label>
+    </div>
+    <span id="nav-name"></span>  <!-- logged-in username, set by setupNav() -->
+    <span id="nav-role"></span>  <!-- role badge, set by setupNav() -->
+    <button class="nb-out" onclick="doLogout()">Sign out</button>
+  </div>
+</nav>
+
+<!-- Flight schedule page -->
+<div id="pg-schedule" class="pg" style="display:block">
+  <div class="ph">
+    <div>
+      <h1>Flight Schedule</h1>
+      <!-- #sched-sub is updated by buildSched() with the flight count, e.g. "245 flights today" -->
+      <div class="sub" id="sched-sub">loading&hellip;</div>
+    </div>
+    <button class="btn bp sm" onclick="go('book')">+ Book</button>
+  </div>
+
+  <!-- Filter bar: origin (#sf-from), destination (#sf-to), aircraft type (#sf-type).
+       populateSels() in shared.js fills the airport dropdowns from the AIRPORTS array. -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end">
+    <div><label>Origin</label><select id="sf-from" style="width:120px"><option value="">All</option></select></div>
+    <div><label>Dest</label>  <select id="sf-to"   style="width:120px"><option value="">All</option></select></div>
+    <div><label>Type</label>
+      <!-- Aircraft type codes: A359=Airbus A350-900, A223=A220-300, A221=A220-100,
+                                B736=Boeing 737-600, B738=737-800 -->
+      <select id="sf-type" style="width:85px">
+        <option value="">All</option>
+        <option>A359</option><option>A223</option><option>A221</option>
+        <option>B736</option><option>B738</option>
+      </select>
+    </div>
+    <button class="btn bp sm" onclick="filterSched()">Filter</button>
+    <button class="btn bg2 sm" onclick="resetSched()">Reset</button>
+  </div>
+
+  <!-- Schedule table: one row per flight from the FLIGHTS array (or filtered subset).
+       #sched-body is populated dynamically by buildSched(). -->
+  <div class="tw">
+    <table>
+      <thead>
+        <tr>
+          <th>Flight</th><th>From</th><th>To</th><th>Dep</th><th>Arr</th>
+          <th>Type</th><th>Tail</th><th>Seats</th><th>Pax</th><th>Load</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="sched-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="aircraft_schedule.js"></script>
+<script src="panther_cloud_air_shared.js"></script>
+<script>
+'use strict';
+
+/* buildSched(list)
+   Renders the schedule table from a flight array.
+   Calculates load factor (pax/seats) and draws a small progress bar per row;
+   bars under 30% are highlighted in yellow to flag under-loaded flights. */
+function buildSched(list) {
+  document.getElementById('sched-sub').textContent = list.length + ' flights today';
+  var html = '';
+  list.forEach(function(f){
+    var pct = Math.round(f.pax / f.seats * 100);
+    html += '<tr>';
+    html += '<td><span class="mn" style="color:var(--lav)">' + f.num + '</span></td>';
+    // City names come from the CITY lookup map in aircraft_schedule.js
+    html += '<td><strong>' + f.from + '</strong><br><span style="font-size:10px;color:var(--dim)">' + (CITY[f.from] || '') + '</span></td>';
+    html += '<td><strong>' + f.to + '</strong><br><span style="font-size:10px;color:var(--dim)">' + (CITY[f.to] || '') + '</span></td>';
+    html += '<td>' + f.dep + '</td><td>' + f.arr + '</td>';
+    html += '<td><span class="tag">' + f.type + '</span></td>';
+    html += '<td style="font-size:10px;color:var(--dim)">' + f.tail + '</td>';
+    html += '<td>' + f.seats + '</td><td>' + f.pax + '</td>';
+    // Load bar turns warning color if below 30% capacity
+    html += '<td>' + pct + '%<div class="bar" style="width:50px"><div class="bf" style="width:' + pct + '%;' + (pct < 30 ? 'background:var(--warn)' : '') + '"></div></div></td>';
+    // Quick-book button stores the route in sessionStorage and navigates to book.html
+    html += '<td><button class="btn bg2 sm" data-fr="' + f.from + '" data-to="' + f.to + '" onclick="quickBook(this.dataset.fr,this.dataset.to)">Book</button></td>';
+    html += '</tr>';
+  });
+  document.getElementById('sched-body').innerHTML = html;
+}
+
+/* filterSched() — reads the three filter dropdowns and passes the filtered
+   FLIGHTS subset to buildSched(). Empty selection means "no filter for that field". */
+function filterSched() {
+  var fr = document.getElementById('sf-from').value;
+  var to = document.getElementById('sf-to').value;
+  var ty = document.getElementById('sf-type').value;
+  buildSched(FLIGHTS.filter(function(f){
+    return (!fr || f.from === fr) && (!to || f.to === to) && (!ty || f.type === ty);
+  }));
+}
+
+/* resetSched() — clears all three filters and re-renders the full schedule */
+function resetSched() {
+  ['sf-from','sf-to','sf-type'].forEach(function(id){ document.getElementById(id).value = ''; });
+  buildSched(FLIGHTS);
+}
+
+/* quickBook(fr, to)
+   Stores the selected route in sessionStorage so book.html can pre-fill
+   the search form and immediately run a search on arrival. */
+function quickBook(fr, to) {
+  sessionStorage.setItem('pca_qb_from', fr);
+  sessionStorage.setItem('pca_qb_to',   to);
+  window.location.href = 'book.html';
+}
+
+/* init() — page startup:
+   1. Restore theme, verify login, configure nav links
+   2. Load airport data for the filter dropdowns
+   3. Populate origin/dest selects, then render the full schedule */
+async function init() {
+  setupTheme();
+  var auth = checkAuth();
+  if (!auth) return;
+  setupNav(auth);
+  await loadAirports();
+  populateSels();   // fills #sf-from and #sf-to from shared.js
+  buildSched(FLIGHTS);
+}
+
+init();
+</script>
+</body>
+</html>
