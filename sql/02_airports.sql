@@ -5,10 +5,24 @@
 --
 -- Tables:
 --   Airports - All operating airports
+--
+-- Notes:
+--   is_hub = TRUE  -> connection hub (11 gates, used as routing center)
+--   is_hub = FALSE -> spoke airport (1-5 gates, scaled to metro_pop)
+--   metro_pop: MSA population used for demand calculations in simulate.py
+--   150-mile proximity pairs share metro_pop values and have no service
+--     between them (enforced in app logic / aircraft_schedule.js, not here)
 -- ================================================
 
 DROP TABLE IF EXISTS Airports;
 
+-- ------------------------------------------------
+-- Airports
+-- Each airport in the PCA network.
+-- metro_pop drives demand volume between city pairs.
+-- is_hub controls route assignment in simulate.py.
+-- gates_available caps simultaneous departures per airport.
+-- ------------------------------------------------
 CREATE TABLE Airports (
     airport_id      INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
     iata_code       VARCHAR(3)      NOT NULL UNIQUE,
@@ -21,34 +35,78 @@ CREATE TABLE Airports (
     gates_available INTEGER         NOT NULL CHECK (gates_available > 0)
 );
 
+-- ------------------------------------------------
+-- Seed Data: Hub Airports (is_hub=TRUE, 11 gates)
+-- ATL, DFW, DEN, ORD serve as the four routing
+-- hubs. Every spoke-to-spoke route connects through
+-- at least one hub per the project specification.
+-- ------------------------------------------------
 INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
-('ATL', 'Hartsfield-Jackson Atlanta International', 'Atlanta', 'Georgia', 'America/New_York', 6411000, TRUE, 11),
-('DFW', 'Dallas/Fort Worth International', 'Dallas', 'Texas', 'America/Chicago', 7637000, TRUE, 11),
-('DEN', 'Denver International', 'Denver', 'Colorado', 'America/Denver', 2963000, TRUE, 11),
-('LAX', 'Los Angeles International', 'Los Angeles', 'California', 'America/Los_Angeles', 13200000, FALSE, 5),
-('ORD', 'O''Hare International', 'Chicago', 'Illinois', 'America/Chicago', 9442000, TRUE, 11),
-('JFK', 'John F. Kennedy International', 'New York', 'New York', 'America/New_York', 19500000, FALSE, 5),
-('MCO', 'Orlando International', 'Orlando', 'Florida', 'America/New_York', 2673000, FALSE, 3),
-('LAS', 'Harry Reid International', 'Las Vegas', 'Nevada', 'America/Los_Angeles', 2265000, FALSE, 2),
-('CLT', 'Charlotte Douglas International', 'Charlotte', 'North Carolina', 'America/New_York', 2797000, FALSE, 3),
-('MIA', 'Miami International', 'Miami', 'Florida', 'America/New_York', 6183000, FALSE, 5),
-('SEA', 'Seattle-Tacoma International', 'Seattle', 'Washington', 'America/Los_Angeles', 4012000, FALSE, 4),
-('EWR', 'Newark Liberty International', 'Newark', 'New Jersey', 'America/New_York', 19500000, FALSE, 5),
-('PHX', 'Phoenix Sky Harbor International', 'Phoenix', 'Arizona', 'America/Phoenix', 4948000, FALSE, 5),
-('IAH', 'George Bush Intercontinental', 'Houston', 'Texas', 'America/Chicago', 7122000, FALSE, 5),
-('BOS', 'Logan International', 'Boston', 'Massachusetts', 'America/New_York', 4919000, FALSE, 5),
-('FLL', 'Fort Lauderdale-Hollywood International', 'Fort Lauderdale', 'Florida', 'America/New_York', 6183000, FALSE, 5),
-('MSP', 'Minneapolis-St. Paul International', 'Minneapolis', 'Minnesota', 'America/Chicago', 3690000, FALSE, 4),
-('LGA', 'LaGuardia', 'New York', 'New York', 'America/New_York', 19500000, FALSE, 5),
-('DTW', 'Detroit Metropolitan Wayne County', 'Detroit', 'Michigan', 'America/Detroit', 4365000, FALSE, 4),
-('PHL', 'Philadelphia International', 'Philadelphia', 'Pennsylvania', 'America/New_York', 6245000, FALSE, 5),
-('SFO', 'San Francisco International', 'San Francisco', 'California', 'America/Los_Angeles', 4623000, FALSE, 5),
-('SLC', 'Salt Lake City International', 'Salt Lake City', 'Utah', 'America/Denver', 1257000, FALSE, 1),
-('DCA', 'Ronald Reagan Washington National', 'Washington', 'District of Columbia', 'America/New_York', 6385000, FALSE, 5),
-('BWI', 'Baltimore/Washington International', 'Baltimore', 'Maryland', 'America/New_York', 6385000, FALSE, 5),
-('IAD', 'Washington Dulles International', 'Washington', 'District of Columbia', 'America/New_York', 6385000, FALSE, 5),
-('TPA', 'Tampa International', 'Tampa', 'Florida', 'America/New_York', 3342000, FALSE, 3),
-('SAN', 'San Diego International', 'San Diego', 'California', 'America/Los_Angeles', 3269000, FALSE, 3),
-('PDX', 'Portland International', 'Portland', 'Oregon', 'America/Los_Angeles', 2512000, FALSE, 3),
-('HNL', 'Honolulu International', 'Honolulu', 'Hawaii', 'Pacific/Honolulu', 974000, FALSE, 1),
-('AUS', 'Austin-Bergstrom International', 'Austin', 'Texas', 'America/Chicago', 2352000, FALSE, 2);
+('ATL', 'Hartsfield-Jackson Atlanta International', 'Atlanta',  'Georgia',  'America/New_York',  6411000, TRUE, 11),
+('DFW', 'Dallas/Fort Worth International',          'Dallas',   'Texas',    'America/Chicago',   7637000, TRUE, 11),
+('DEN', 'Denver International',                     'Denver',   'Colorado', 'America/Denver',    2963000, TRUE, 11),
+('ORD', 'O''Hare International',                    'Chicago',  'Illinois', 'America/Chicago',   9442000, TRUE, 11);
+
+-- ------------------------------------------------
+-- Seed Data: Northeast / Mid-Atlantic Spoke Airports
+-- JFK + EWR + LGA share the NY MSA (metro_pop 19.5M).
+-- DCA + BWI + IAD share the DC MSA (metro_pop 6.39M).
+-- Proximity rule: JFK<->EWR, JFK<->LGA, EWR<->LGA,
+--                 EWR<->PHL, LGA<->PHL, DCA<->BWI,
+--                 DCA<->IAD, BWI<->IAD — no service.
+-- ------------------------------------------------
+INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
+('JFK', 'John F. Kennedy International',      'New York',     'New York',             'America/New_York', 19500000, FALSE, 5),
+('EWR', 'Newark Liberty International',       'Newark',       'New Jersey',           'America/New_York', 19500000, FALSE, 5),
+('LGA', 'LaGuardia',                          'New York',     'New York',             'America/New_York', 19500000, FALSE, 5),
+('BOS', 'Logan International',                'Boston',       'Massachusetts',        'America/New_York',  4919000, FALSE, 5),
+('PHL', 'Philadelphia International',         'Philadelphia', 'Pennsylvania',         'America/New_York',  6245000, FALSE, 5),
+('DCA', 'Ronald Reagan Washington National',  'Washington',   'District of Columbia', 'America/New_York',  6385000, FALSE, 5),
+('BWI', 'Baltimore/Washington International', 'Baltimore',    'Maryland',             'America/New_York',  6385000, FALSE, 5),
+('IAD', 'Washington Dulles International',    'Washington',   'District of Columbia', 'America/New_York',  6385000, FALSE, 5),
+('DTW', 'Detroit Metropolitan Wayne County',  'Detroit',      'Michigan',             'America/Detroit',   4365000, FALSE, 4),
+('MSP', 'Minneapolis-St. Paul International', 'Minneapolis',  'Minnesota',            'America/Chicago',   3690000, FALSE, 4);
+
+-- ------------------------------------------------
+-- Seed Data: Southeast / Florida Spoke Airports
+-- FLL and MIA share the Miami MSA (metro_pop 6.18M).
+-- MCO<->TPA are within 150 mi — no service between them.
+-- ------------------------------------------------
+INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
+('MIA', 'Miami International',                        'Miami',           'Florida',        'America/New_York', 6183000, FALSE, 5),
+('FLL', 'Fort Lauderdale-Hollywood International',    'Fort Lauderdale', 'Florida',        'America/New_York', 6183000, FALSE, 5),
+('MCO', 'Orlando International',                      'Orlando',         'Florida',        'America/New_York', 2673000, FALSE, 3),
+('TPA', 'Tampa International',                        'Tampa',           'Florida',        'America/New_York', 3342000, FALSE, 3),
+('CLT', 'Charlotte Douglas International',            'Charlotte',       'North Carolina', 'America/New_York', 2797000, FALSE, 3);
+
+-- ------------------------------------------------
+-- Seed Data: South / Southwest Spoke Airports
+-- AUS<->IAH are within 150 mi — no service between them.
+-- PHX uses America/Phoenix (no DST observed).
+-- ------------------------------------------------
+INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
+('IAH', 'George Bush Intercontinental',         'Houston',   'Texas',    'America/Chicago',    7122000, FALSE, 5),
+('AUS', 'Austin-Bergstrom International',        'Austin',    'Texas',    'America/Chicago',    2352000, FALSE, 2),
+('PHX', 'Phoenix Sky Harbor International',      'Phoenix',   'Arizona',  'America/Phoenix',    4948000, FALSE, 5),
+('LAS', 'Harry Reid International',              'Las Vegas', 'Nevada',   'America/Los_Angeles',2265000, FALSE, 2);
+
+-- ------------------------------------------------
+-- Seed Data: West Coast Spoke Airports
+-- LAX<->SAN are within 150 mi — no service between them.
+-- PDX<->SEA are within 150 mi — no service between them.
+-- ------------------------------------------------
+INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
+('LAX', 'Los Angeles International',    'Los Angeles',   'California', 'America/Los_Angeles', 13200000, FALSE, 5),
+('SAN', 'San Diego International',      'San Diego',     'California', 'America/Los_Angeles',  3269000, FALSE, 3),
+('SFO', 'San Francisco International',  'San Francisco', 'California', 'America/Los_Angeles',  4623000, FALSE, 5),
+('SEA', 'Seattle-Tacoma International', 'Seattle',       'Washington', 'America/Los_Angeles',  4012000, FALSE, 4),
+('PDX', 'Portland International',       'Portland',      'Oregon',     'America/Los_Angeles',  2512000, FALSE, 3);
+
+-- ------------------------------------------------
+-- Seed Data: Mountain / Pacific Spoke Airports
+-- SLC: single gate — smallest metro in the network.
+-- HNL: requires long-haul A350 service from DEN hub.
+-- ------------------------------------------------
+INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
+('SLC', 'Salt Lake City International', 'Salt Lake City', 'Utah',   'America/Denver',   1257000, FALSE, 1),
+('HNL', 'Honolulu International',       'Honolulu',       'Hawaii',  'Pacific/Honolulu',  974000, FALSE, 1);
