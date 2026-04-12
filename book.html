@@ -350,6 +350,7 @@ function doSearch() {
       if (isTooClose(f.from, f.to)) continue;
       if (path.length > 0) {
         var gap = mins(f.dep) - mins(path[path.length-1].arr);
+        if (gap < 0) gap += 1440;  // day-wrap: connecting flight departs after midnight
         if (gap < 30 || gap > 360) continue;
       }
       var np = path.concat([f]);
@@ -390,6 +391,7 @@ function renderResults() {
               '</div>';
       if (j < legs.length - 1) {
         var gap = mins(legs[j+1].dep) - mins(l.arr);
+        if (gap < 0) gap += 1440;
         legH += '<div class="lay">' + gap + ' min layover at ' + l.to + '</div>';
       }
     }

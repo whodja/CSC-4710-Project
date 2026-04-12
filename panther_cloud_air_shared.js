@@ -247,6 +247,18 @@ function baseFare(legs) {
   return Math.max(49, Math.round(b * 6 * getCpm() / 100));
 }
 
+/* isTooClose(a, b)
+   ──────────────────
+   Returns true if the two IATA codes are within 150 miles of each other
+   (i.e., the pair appears in the TOO_CLOSE Set defined in aircraft_schedule.js).
+   Checks both orderings ("ATL-BOS" and "BOS-ATL") since TOO_CLOSE stores them
+   in canonical sorted order. Used by doSearch() in book.html to block
+   same-metro searches and skip short-haul legs during DFS itinerary building. */
+function isTooClose(a, b) {
+  if (typeof TOO_CLOSE === 'undefined') return false;
+  return TOO_CLOSE.has(a + '-' + b) || TOO_CLOSE.has(b + '-' + a);
+}
+
 // ── Select dropdown population ────────────────────────────────────────────────
 
 /* populateSels()
