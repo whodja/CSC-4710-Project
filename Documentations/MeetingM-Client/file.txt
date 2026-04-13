@@ -1,7 +1,7 @@
 
 
-Meeting 1
-Date: 01/20/2026 
+Meeting: 1
+Week: 3
 Attendees: Reid, Graham, Preston and Gracie
 
 General Notes:
@@ -26,8 +26,8 @@ Questions for Client:
 
 
 
-Meeting 2:
-Date: 01/27/2026 
+Meeting 2: 
+Week: 
 Attendees: Reid, Graham, Preston and Gracie
 
 
@@ -40,8 +40,8 @@ Attendees: Reid, Graham, Preston and Gracie
 
 
 
-Meeting 3
-Date: 02/11/2026  
+Meeting: 3
+Date: Week 6 
 Attendees: Reid, Graham, Preston and Gracie
 
 General Notes:
@@ -61,8 +61,8 @@ Questions for Client:
 
 
 
-Meeting 4
-Date: 03/10/2026 
+Meeting: 4
+Date: Week 8 
 Attendees: Reid, Graham, Preston and Gracie
 
 General Notes:
@@ -75,20 +75,16 @@ Decisions Made:
 - Flight board layout: display all flights listed at a glance
 - Backend view showing profit data accessible behind the scenes
 
-Template Feedback:
-- Each figure and table must have a caption/short description beneath it
-- On the deliverables section, replace the placeholder word "Date" with the actual date
 
 Questions for Client:
-- [1] How should the data be formatted?
-- [2] How should the simulation be designed?
-- [3] What level of access does the client want vs. other users?
+- [1] From our demo, what would you want different?
+- [2] Can you break down the appendices and hiearchy requirements more?
 
 
 
 
-Meeting 5
-Date: 03/10/2026 
+Meeting# 5
+Date: Week 9 
 Attendees: Reid and Graham
 
 General Notes:
@@ -164,8 +160,8 @@ Questions for Client:
 
 
 Meeting 8
-Date: 01/20.2026 
-Attendees: Reid, Graham, Preston and Gracie
+Date: Week 12 
+Attendees: Reid, Graham, and Gracie
 
 General Notes:
 - Create a new file in GitHub to upload hours every week
@@ -182,14 +178,14 @@ Template Feedback:
 - On the deliverables section, replace the placeholder word "Date" with the actual date
 
 Questions for Client:
-- [1] How should the data be formatted?
-- [2] How should the simulation be designed?
-- [3] What level of access does the client want vs. other users?
+- [1] How should the help tab be formatted?
+- [2] Going through presentation is there anything client specifically pointed out to put in simmulation?
 
 
 
-Meeting 9
-Date: 04/07/2026
+
+Meeting: 9
+Date: Week 13
 Attendees: Reid, Graham, and Gracie
 
 General Notes:
