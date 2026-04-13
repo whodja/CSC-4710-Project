@@ -1,4 +1,6 @@
 -- ================================================
+-- Graham McCabe 
+-- CSC-4810
 -- 03_flight_distances.sql
 -- Defines and populates flight distances between
 -- all Panther Cloud Air operating airports.
