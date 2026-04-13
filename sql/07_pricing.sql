@@ -1,4 +1,6 @@
 -- ================================================
+-- Graham McCabe 
+-- CSC-4810
 -- 07_pricing.sql
 -- Defines pricing rules and calculated ticket
 -- prices for Panther Cloud Air.

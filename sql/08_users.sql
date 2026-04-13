@@ -1,4 +1,6 @@
 -- ================================================
+-- Graham McCabe 
+-- CSC-4810
 -- 08_users.sql
 -- Defines system users for Panther Airs.
 --

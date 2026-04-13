@@ -1,4 +1,6 @@
 -- ================================================
+-- Graham McCabe 
+-- CSC-4810
 -- 04_flights.sql
 -- Defines flight operations and turnaround time
 -- tracking for Panther Cloud Air.

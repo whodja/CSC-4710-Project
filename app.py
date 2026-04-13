@@ -1,18 +1,12 @@
 """
+
+Graham McCabe
+CSC-4810
 app.py — Panther Cloud Air — Flask REST API
 ============================================
 Serves the front-end static files and exposes REST endpoints that read/write
 the MariaDB database managed by db.py.
 
-PROJECT OVERVIEW
-────────────────
-Panther Cloud Air (PCA) is a simulated regional airline.  This Flask app is the
-backend: it authenticates staff, serves all HTML/JS/CSS assets, and provides
-JSON data that the browser-side JS consumes for every data-driven feature.
-
-Because the heavy lifting (simulation engine, P&L tables, schedule graph) runs
-entirely in the browser (aircraft_schedule.js + admin.html JS), most of these
-endpoints are read-only lookups or simple INSERTs.
 
 ENDPOINTS
 ─────────
@@ -25,20 +19,6 @@ GET  /api/config                System configuration key→value pairs
 POST /api/login                 Authenticate username + bcrypt password
 POST /api/bookings              Record a passenger booking (upsert passenger row)
 GET  /api/bookings/<ref>        Echo back a booking reference (decorative lookup)
-
-CORS POLICY
-───────────
-All responses include Access-Control-Allow-* headers set to "*" so the page
-can be opened as a local file:// (development / demo) while still reaching the
-Flask server on localhost:5000 or 5001.
-
-DATABASE
-────────
-MariaDB, schema "timetable".  Managed by db.py via PyMySQL with DictCursor
-so all rows come back as dicts (column_name → value).
-Connection details come from environment variables (see db.py).
-Docker Compose injects those variables; local development can set them manually
-or rely on the db.py defaults.
 """
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -300,8 +280,7 @@ def api_login():
 def _make_ref():
     """
     Generate a booking reference code in the format PCA-XXXXX.
-    Uses 5 random uppercase letters/digits for ~60 million unique combinations —
-    sufficient for a demo / academic system.
+    Uses 5 random uppercase letters/digits
     Example output: PCA-A3X7K
     """
     chars = string.ascii_uppercase + string.digits
