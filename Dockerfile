@@ -1,5 +1,4 @@
 # ================================================
-# Graham McCabe
 # Dockerfile — Panther Cloud Air web service
 # Builds a lightweight Python 3.11 image that
 # runs the Flask REST API and serves the front-end.
@@ -20,6 +19,6 @@ RUN pip install -r requirements.txt
 # Copy all project source files into the container
 COPY . .
 
-# 1. seed_users.py creates the default Admin/Employee accounts (idempotent)
-# 2. app.py starts the Flask development server on port 5000
-CMD ["sh", "-c", "python seed_users.py && python app.py"]
+# Users are seeded by sql/08_users.sql (INSERT IGNORE with pre-hashed passwords)
+# before this container starts, so no seed script is needed here.
+CMD ["python3", "app.py"]

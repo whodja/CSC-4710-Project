@@ -4,13 +4,13 @@
      AUTHENTICATION FLOW
      ───────────────────
      1. User enters username + password and clicks "Sign In" (or presses Enter).
-     2. doLogin() POSTs { username, password } to the Flask /api/login endpoint.
+     2. submitLogin() POSTs { username, password } to the Flask /api/login endpoint.
      3. Flask checks the credentials against the bcrypt-hashed password in the Users
         table and returns:
           { "ok": true,  "username": "...", "user_type": "Admin"|"Employee" }
         or
           { "ok": false, "error": "Invalid credentials." }
-     4. On success: _completeLogin() (shared.js) saves username + role to
+     4. On success: _saveSessionAndRedirect() (shared.js) saves username + role to
         sessionStorage, then redirects:
           Admin    →  admin.html   (full access: admin tabs + employee tabs)
           Employee →  employee.html (flight search + live status only)
@@ -44,13 +44,13 @@
 
 <!-- ── Light / Dark theme toggle ────────────────────────────────────
      Fixed to top-right so it is always reachable.
-     The checkbox's onchange calls toggleTheme() from shared.js, which toggles
+     The checkbox's onchange calls setTheme() from shared.js, which toggles
      the "light" class on <body> and persists the choice in localStorage so the
      preference survives page reloads and navigation to other pages. -->
 <div style="position:fixed;top:12px;right:14px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);z-index:10">
   <span>Light</span>
   <label class="theme-sw">
-    <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+    <input type="checkbox" id="theme-chk" onchange="setTheme(this.checked)">
     <span class="theme-sw-slider"></span>
   </label>
 </div>
@@ -71,9 +71,9 @@
     <!-- Login form
          #lu  — username text field
          #lp  — password field (type=password masks input)
-         keydown listener on the card handles Enter → doLogin() so the user
+         keydown listener on the card handles Enter → submitLogin() so the user
          does not have to reach for the mouse to submit. -->
-    <div class="lcard" onkeydown="if(event.key==='Enter') doLogin()">
+    <div class="lcard" onkeydown="if(event.key==='Enter') submitLogin()">
       <div class="f">
         <label>Username</label>
         <input id="lu" placeholder="username" autocomplete="username">
@@ -83,11 +83,11 @@
         <input id="lp" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
       </div>
 
-      <!-- Sign In button — calls doLogin() on click -->
-      <button class="btn bp" style="width:100%;justify-content:center;margin-top:4px" onclick="doLogin()">Sign In</button>
+      <!-- Sign In button — calls submitLogin() on click -->
+      <button class="btn bp" style="width:100%;justify-content:center;margin-top:4px" onclick="submitLogin()">Sign In</button>
 
       <!-- #login-err: shown only when credentials fail or the server returns an error.
-           Hidden by default via display:none; text is set programmatically in doLogin(). -->
+           Hidden by default via display:none; text is set programmatically in submitLogin(). -->
       <p id="login-err" style="font-size:11px;color:var(--bad);text-align:center;margin-top:8px;display:none"></p>
     </div>
 
@@ -95,19 +95,19 @@
 </div>
 
 <!-- aircraft_schedule.js: defines API_BASE and static constants (AIRPORTS, FLIGHTS, etc.)
-     panther_cloud_air_shared.js: shared helpers — setupTheme, _completeLogin, checkAuth, etc. -->
+     panther_cloud_air_shared.js: shared helpers — applyTheme, _saveSessionAndRedirect, checkAuth, etc. -->
 <script src="aircraft_schedule.js"></script>
 <script src="panther_cloud_air_shared.js"></script>
 <script>
 'use strict';
 
-/* doLogin()
-   ─────────
+/* submitLogin()
+   ─────────────
    Reads the username and password fields, validates they are non-empty,
    then POSTs to the Flask /api/login endpoint.
 
    Success path (HTTP 200 + data.ok === true):
-     _completeLogin(username, user_type) stores credentials in sessionStorage
+     _saveSessionAndRedirect(username, user_type) stores credentials in sessionStorage
      and redirects: Admin → admin.html, Employee → employee.html.
 
    Failure path (HTTP 401 + data.ok === false):
@@ -118,7 +118,7 @@
      An "Unable to reach the server" message is shown. There is intentionally
      no demo bypass — the database must be running to log in.
      If you need to demo without a DB, run the Docker stack: `docker compose up`. */
-function doLogin() {
+function submitLogin() {
   var u = document.getElementById('lu').value.trim();
   var p = document.getElementById('lp').value.trim();
   var errEl = document.getElementById('login-err');
@@ -140,7 +140,7 @@ function doLogin() {
   .then(function(data){
     if (data.ok) {
       // API confirmed valid credentials — data.user_type is "Admin" or "Employee"
-      _completeLogin(data.username, data.user_type);
+      _saveSessionAndRedirect(data.username, data.user_type);
     } else {
       // Invalid credentials — show the server's error message
       errEl.textContent = data.error || 'Invalid credentials.';
@@ -157,11 +157,11 @@ function doLogin() {
 /* Immediately-invoked init
    ─────────────────────────
    Runs the moment the page loads.
-   1. Applies the stored light/dark theme preference.
+   1. Applies the stored light/dark theme preference via applyTheme().
    2. Checks sessionStorage for an active session; if one exists the user is
       redirected to their portal immediately — they never see the login form. */
 (function init() {
-  setupTheme();
+  applyTheme();
   var user = sessionStorage.getItem('pca_username');
   var role = sessionStorage.getItem('pca_role');
   if (user) {

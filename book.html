@@ -5,31 +5,31 @@
      BOOKING FLOW OVERVIEW
      ─────────────────────
      All five steps live in this single file as separate <div id="pg-*"> panels.
-     go() / showPage() from shared.js swaps which panel is visible without a
-     full page reload.  This preserves all JS state (selLegs, curCls, _total)
-     across steps.
+     navigateTo() / showBookingStep() from shared.js swaps which panel is visible
+     without a full page reload.  This preserves all JS state (selectedLegs,
+     selectedClass, _total) across steps.
 
      Step 1 — Search  (#pg-book):
        Origin/destination dropdowns, passenger count, max-stops selector.
-       doSearch() builds an adjacency graph from FLIGHTS and runs a DFS to
-       find up to 6 itineraries.  Results are stored in `itin[]` then rendered
-       as selectable cards by renderResults().
+       searchFlights() builds an adjacency graph from FLIGHTS and runs a DFS to
+       find up to 6 itineraries.  Results are stored in `foundItineraries[]` then
+       rendered as selectable cards by displaySearchResults().
 
-     Step 2 — Select  (inline in #pg-book, rendered by renderResults()):
+     Step 2 — Select  (inline in #pg-book, rendered by displaySearchResults()):
        Each card shows route, stops, flight numbers, and economy fare.
-       pickItin(i) stores the chosen legs in `selLegs` and advances to Step 3.
+       selectItinerary(i) stores the chosen legs in `selectedLegs` and advances to Step 3.
 
      Step 3 — Class   (#pg-class):
        Economy (1×) or First Class (4×) multiplier on the base fare.
-       pickCls(c) records `curCls` ('e' or 'f') and updates the "What's Included"
+       selectCabin(c) records `selectedClass` ('e' or 'f') and updates the "What's Included"
        checklist.  Continuing goes to Step 4.
 
      Step 4 — Confirm (#pg-confirm):
-       Passenger name + email form.  buildConf() computes the full price breakdown:
+       Passenger name + email form.  renderConfirmStep() computes the full price breakdown:
          base fare  × class multiplier
          + 11.5%  federal excise / segment fees
          + 2.0%   airport surcharge
-       confirmBooking() POSTs to /api/bookings.  On network failure a local
+       submitBooking() POSTs to /api/bookings.  On network failure a local
        PCA-XXXXX reference is generated as a graceful fallback.
 
      Step 5 — Done    (#pg-done):
@@ -38,16 +38,16 @@
      FARE FORMULA
      ────────────
      Economy base fare per leg:
-       fare = max($49, round(block_minutes × 6 nm/min × getCpm()/100 × getMarginScale()))
-     getCpm()        — reads pca_cpm from localStorage (set in admin Pricing tab, default 65 ¢/nm)
-     getMarginScale() — reads pca_margins from localStorage; ratio of current avg margin
-                        to baseline 24.5% avg.  Default margins give scale = 1.0.
+       fare = max($49, round(block_minutes × 6 nm/min × getCentsPerNm()/100 × getMarginMultiplier()))
+     getCentsPerNm()      — reads pca_cpm from localStorage (set in admin Pricing tab, default 65 ¢/nm)
+     getMarginMultiplier() — reads pca_margins from localStorage; ratio of current avg margin
+                            to baseline 24.5% avg.  Default margins give scale = 1.0.
      First class multiplier: 4.0× economy.
 
      DFS SEARCH CONSTRAINTS
      ──────────────────────
      - Nonstop / 1-stop / 2-stop: controlled by the "Max Stops" selector
-     - 150-mile exclusion: isTooClose() blocks pairs in the TOO_CLOSE set
+     - 150-mile exclusion: areTooClose() blocks pairs in the TOO_CLOSE set
      - Connection window: min 30 min, max 360 min between arrival and next departure
      - No flight number reuse within the same itinerary
      - Returns at most 6 itineraries (stops after that to stay responsive) -->
@@ -64,27 +64,27 @@
 <!-- Shared navigation bar -->
 <nav id="nav">
   <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
-  <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
-  <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
-  <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
-  <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
-  <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
+  <button class="nb" id="nb-airports"  onclick="navigateTo('airports')">Airports</button>
+  <button class="nb" id="nb-schedule"  onclick="navigateTo('schedule')">Schedule</button>
+  <button class="nb" id="nb-book"      onclick="navigateTo('book')">Book Flight</button>
+  <button class="nb" id="nb-employee"  style="display:none" onclick="navigateTo('employee')">Employee</button>
+  <button class="nb" id="nb-admin"     style="display:none" onclick="navigateTo('admin')">Admin</button>
   <div id="nav-right">
     <div class="theme-sw-wrap">
       <span>Light</span>
       <label class="theme-sw">
-        <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+        <input type="checkbox" id="theme-chk" onchange="setTheme(this.checked)">
         <span class="theme-sw-slider"></span>
       </label>
     </div>
     <span id="nav-name"></span>
     <span id="nav-role"></span>
-    <button class="nb-out" onclick="doLogout()">Sign out</button>
+    <button class="nb-out" onclick="logout()">Sign out</button>
   </div>
 </nav>
 
 <!-- Step 1: Search — origin/destination pickers, passenger count, max stops, search button.
-     #results is injected by renderResults() after the DFS completes. -->
+     #results is injected by displaySearchResults() after the DFS completes. -->
 <div id="pg-book" class="pg">
   <div class="ph">
     <div><h1>Book a Flight</h1><div class="sub">Search and book available routes</div></div>
@@ -99,7 +99,7 @@
   <div class="box">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
       <div style="flex:1;min-width:110px"><label>From</label><select id="b-from"></select></div>
-      <button class="btn bg2 sm" onclick="swapPorts()">&#x21C4;</button>
+      <button class="btn bg2 sm" onclick="swapOriginDest()">&#x21C4;</button>
       <div style="flex:1;min-width:110px"><label>To</label><select id="b-to"></select></div>
       <div style="min-width:80px"><label>Pax</label>
         <select><option>1</option><option>2</option><option>3</option><option>4+</option></select>
@@ -111,19 +111,19 @@
           <option value="2">2 stops</option>
         </select>
       </div>
-      <button class="btn bp" onclick="doSearch()">Search</button>
+      <button class="btn bp" onclick="searchFlights()">Search</button>
     </div>
   </div>
   <div id="results"></div>
 </div>
 
 <!-- Step 3: Select Cabin Class — Economy / First.
-     Prices shown are: Economy = baseFare(legs) × margin, First = 4.0×.
-     "What's Included" panel updates dynamically via pickCls() when a class is selected. -->
+     Prices shown are: Economy = calcTotalFare(legs) × margin, First = 4.0×.
+     "What's Included" panel updates dynamically via selectCabin() when a class is selected. -->
 <div id="pg-class" class="pg">
   <div class="ph">
     <div><h1>Select Class</h1><div class="sub" id="cls-sub"></div></div>
-    <button class="btn bg2 sm" onclick="go('book')">&#x2190; Back</button>
+    <button class="btn bg2 sm" onclick="navigateTo('book')">&#x2190; Back</button>
   </div>
   <div class="steps">
     <div class="step done"><div class="sn">&#x2713;</div>Search</div><div class="sl2"></div>
@@ -141,18 +141,18 @@
       <div class="box">
         <div class="bh"><h2>Cabin Class</h2></div>
         <div class="co">
-          <div class="cl ce" id="cl-e" onclick="pickCls('e')">
+          <div class="cl ce" id="cl-e" onclick="selectCabin('e')">
             <div class="cn" style="color:var(--ok)">Economy</div>
             <div class="cp" id="cp-e" style="color:var(--ok)">$--</div>
             <div class="cd">carry-on included</div>
           </div>
-          <div class="cl" id="cl-f" onclick="pickCls('f')">
+          <div class="cl" id="cl-f" onclick="selectCabin('f')">
             <div class="cn" style="color:var(--pk2)">First</div>
             <div class="cp" id="cp-f" style="color:var(--pk2)">$--</div>
             <div class="cd">lie-flat + lounge</div>
           </div>
         </div>
-        <button class="btn bp" style="width:100%;justify-content:center;margin-top:10px" onclick="go('confirm')">Continue &#x2192;</button>
+        <button class="btn bp" style="width:100%;justify-content:center;margin-top:10px" onclick="navigateTo('confirm')">Continue &#x2192;</button>
       </div>
     </div>
     <div class="box">
@@ -173,11 +173,11 @@
 
 <!-- Step 4: Confirm Booking — passenger details form (first name, last name, email)
      and price breakdown: base fare + 11.5% taxes + 2% airport surcharge = total.
-     confirmBooking() POSTs to /api/bookings; falls back to a local PCA reference if offline. -->
+     submitBooking() POSTs to /api/bookings; falls back to a local PCA reference if offline. -->
 <div id="pg-confirm" class="pg">
   <div class="ph">
     <div><h1>Confirm Booking</h1></div>
-    <button class="btn bg2 sm" onclick="go('class')">&#x2190; Back</button>
+    <button class="btn bg2 sm" onclick="navigateTo('class')">&#x2190; Back</button>
   </div>
   <div class="steps">
     <div class="step done"><div class="sn">&#x2713;</div>Search</div><div class="sl2"></div>
@@ -210,7 +210,7 @@
         <span>note:</span>
         <span style="color:var(--dim)">Boarding closes 15 min before departure. Allow 30 min for connections.</span>
       </div>
-      <button class="btn bok" style="width:100%;justify-content:center;padding:10px;margin-top:10px" onclick="confirmBooking()">&#x2714; Confirm Booking</button>
+      <button class="btn bok" style="width:100%;justify-content:center;padding:10px;margin-top:10px" onclick="submitBooking()">&#x2714; Confirm Booking</button>
     </div>
   </div>
 </div>
@@ -229,8 +229,8 @@
       <div id="done-det" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px"></div>
     </div>
     <div style="display:flex;gap:8px;justify-content:center">
-      <button class="btn bg2" onclick="go('schedule')">Schedule</button>
-      <button class="btn bp"  onclick="go('book')">Book Another</button>
+      <button class="btn bg2" onclick="navigateTo('schedule')">Schedule</button>
+      <button class="btn bp"  onclick="navigateTo('book')">Book Another</button>
     </div>
   </div>
 </div>
@@ -242,17 +242,17 @@
 
 /* Module-level state for the booking wizard.
    ─────────────────────────────────────────
-   curCls  — active cabin class: 'e' (Economy) or 'f' (First Class)
-   selLegs — array of FLIGHTS objects for the chosen itinerary (1 leg = nonstop,
-             2+ legs = connecting).  Null until the user picks an itinerary.
-   itin    — all itineraries found by the most recent DFS search (up to 6).
-             Persists until a new search overwrites it. */
-var curCls  = 'e';
-var selLegs = null;
-var itin    = [];
+   selectedClass — active cabin class: 'e' (Economy) or 'f' (First Class)
+   selectedLegs  — array of FLIGHTS objects for the chosen itinerary (1 leg = nonstop,
+                   2+ legs = connecting).  Null until the user picks an itinerary.
+   foundItineraries — all itineraries found by the most recent DFS search (up to 6).
+                      Persists until a new search overwrites it. */
+var selectedClass       = 'e';
+var selectedLegs        = null;
+var foundItineraries    = [];
 
-/* getMarginScale()
-   ─────────────────
+/* getMarginMultiplier()
+   ─────────────────────
    Returns the revenue multiplier corresponding to the admin-set profit margins.
    Reads the four margin percentages (sh/mh/lh/intl) from localStorage where
    admin.html saves them whenever a slider changes.
@@ -262,8 +262,8 @@ var itin    = [];
 
    At default settings: current_avg = 24.5, so scale = 1.0 (no change to fares).
    Raising all margins to 40% would give scale ≈ 1.124 — fares 12.4% higher.
-   This scale is applied on top of getCpm() so the two controls are independent. */
-function getMarginScale() {
+   This scale is applied on top of getCentsPerNm() so the two controls are independent. */
+function getMarginMultiplier() {
   var m = {sh:18, mh:22, lh:26, intl:32};
   try { var s = JSON.parse(localStorage.getItem('pca_margins')); if (s && s.sh) m = s; } catch(e) {}
   var BASE_AVG = (18 + 22 + 26 + 32) / 4;  // 24.5 — the default average margin
@@ -271,131 +271,134 @@ function getMarginScale() {
   return (1 + curr / 100) / (1 + BASE_AVG / 100);
 }
 
-/* legFare(leg) — per-leg economy fare = est_nm × cpm/100 × margin scale, min $49
-   est_nm = block_minutes × 6  (450 kt proxy); getCpm() reads pca_cpm from localStorage */
-function legFare(leg) {
-  var bm = mins(leg.arr) - mins(leg.dep);
-  if (bm <= 0) bm += 1440;   // overnight leg
-  return Math.max(49, Math.round(bm * 6 * getCpm() / 100 * getMarginScale()));
+/* calcLegFare(leg) — per-leg economy fare = est_nm × cpm/100 × margin multiplier, min $49
+   est_nm = block_minutes × 6  (450 kt proxy); getCentsPerNm() reads pca_cpm from localStorage */
+function calcLegFare(leg) {
+  var totalBlockMinutes = timeToMinutes(leg.arr) - timeToMinutes(leg.dep);
+  if (totalBlockMinutes <= 0) totalBlockMinutes += 1440;   // overnight leg
+  return Math.max(49, Math.round(totalBlockMinutes * 6 * getCentsPerNm() / 100 * getMarginMultiplier()));
 }
 
-/* baseFare(legs) — total economy fare across all legs (overrides shared.js version) */
-function baseFare(legs) {
-  return legs.reduce(function(s, l) { return s + legFare(l); }, 0);
+/* calcTotalFare(legs) — total economy fare across all legs (overrides shared.js version) */
+function calcTotalFare(legs) {
+  return legs.reduce(function(sum, leg) { return sum + calcLegFare(leg); }, 0);
 }
 
-/* go(id)
-   ───────
-   Local override of the shared go() function.  Booking sub-pages ('book', 'class',
-   'confirm', 'done') are handled as in-page panel swaps via showPage() so the wizard
-   state (selLegs, curCls, etc.) is preserved between steps.
+/* navigateTo(pageId)
+   ──────────────────
+   Local override of the shared navigateTo() function.  Booking sub-pages ('book',
+   'class', 'confirm', 'done') are handled as in-page panel swaps via showBookingStep()
+   so the wizard state (selectedLegs, selectedClass, etc.) is preserved between steps.
    Any other page ID (e.g. 'schedule', 'airports') falls through to a full redirect. */
-function go(id) {
+function navigateTo(pageId) {
   var bookPages = ['book', 'class', 'confirm', 'done'];
-  if (bookPages.indexOf(id) >= 0) {
-    showPage(id);
+  if (bookPages.indexOf(pageId) >= 0) {
+    showBookingStep(pageId);
     document.querySelectorAll('.nb').forEach(function(n){ n.classList.remove('on'); });
-    var nb = document.getElementById('nb-book');
-    if (nb) nb.classList.add('on');
-    if (id === 'confirm') buildConf();
-    if (id === 'done')    buildDone();
+    var navButton = document.getElementById('nb-book');
+    if (navButton) navButton.classList.add('on');
+    if (pageId === 'confirm') renderConfirmStep();
+    if (pageId === 'done')    renderDoneStep();
     return;
   }
-  window.location.href = id + '.html';
+  window.location.href = pageId + '.html';
 }
 
-/* swapPorts() — swaps the origin and destination dropdowns (the ⇄ button) */
-function swapPorts() {
-  var a = document.getElementById('b-from');
-  var b = document.getElementById('b-to');
-  var t = a.value; a.value = b.value; b.value = t;
+/* swapOriginDest() — swaps the origin and destination dropdowns (the ⇄ button) */
+function swapOriginDest() {
+  var originEl = document.getElementById('b-from');
+  var destEl   = document.getElementById('b-to');
+  var temp = originEl.value; originEl.value = destEl.value; destEl.value = temp;
 }
 
-/* doSearch()
-   ───────────
+/* searchFlights()
+   ────────────────
    Entry point for the itinerary search (Step 1 → Step 2).
 
    1. Read origin (#b-from), destination (#b-to), max stops (#b-stops).
    2. Reject if origin === destination or if the pair is in TOO_CLOSE.
-   3. Build an adjacency graph: graph[iata] = [flights departing from iata].
+   3. Build an adjacency graph: adjacencyGraph[iata] = [flights departing from iata].
    4. Run a recursive DFS from the origin.  At each node the DFS tries every
-      outbound flight; if it reaches the destination it records the path in `itin`.
+      outbound flight; if it reaches the destination it records the path in foundItineraries.
    5. Constraints enforced per flight added to the path:
         - Flight number not already used (prevents circular routes).
         - Origin/destination pair not in TOO_CLOSE.
         - Connection gap: 30 min minimum, 360 min maximum (6-hour max layover).
-        - Recursion depth limited by the "max stops" selection (ms=0 means nonstop).
+        - Recursion depth limited by the "max stops" selection (maxStops=0 means nonstop).
    6. Stops after 6 itineraries to avoid hanging the browser on dense graphs.
-   7. Calls renderResults() to display the found itineraries as selectable cards. */
-function doSearch() {
-  var fr = document.getElementById('b-from').value;
-  var to = document.getElementById('b-to').value;
-  var ms = parseInt(document.getElementById('b-stops').value);
-  if (fr === to) { alert('Origin and destination must be different.'); return; }
-  if (isTooClose(fr, to)) {
+   7. Calls displaySearchResults() to display the found itineraries as selectable cards. */
+function searchFlights() {
+  var originCode = document.getElementById('b-from').value;
+  var destCode   = document.getElementById('b-to').value;
+  var maxStops   = parseInt(document.getElementById('b-stops').value);
+  if (originCode === destCode) { alert('Origin and destination must be different.'); return; }
+  if (areTooClose(originCode, destCode)) {
     document.getElementById('results').innerHTML =
       '<div class="al al-w"><span>rule:</span><span style="color:var(--dim)">' +
-      fr + ' and ' + to + ' are within 150 miles. No service between these airports.</span></div>';
+      originCode + ' and ' + destCode + ' are within 150 miles. No service between these airports.</span></div>';
     return;
   }
-  var graph = {};
-  FLIGHTS.forEach(function(f){ if (!graph[f.from]) graph[f.from] = []; graph[f.from].push(f); });
-  itin = [];
-  function dfs(cur, path) {
-    if (itin.length >= 6) return;
-    var legs = graph[cur] || [];
-    for (var i = 0; i < legs.length; i++) {
-      var f = legs[i];
-      if (path.some(function(x){ return x.num === f.num; })) continue;
-      if (isTooClose(f.from, f.to)) continue;
-      if (path.length > 0) {
-        var gap = mins(f.dep) - mins(path[path.length-1].arr);
-        if (gap < 0) gap += 1440;  // day-wrap: connecting flight departs after midnight
-        if (gap < 30 || gap > 360) continue;
+  var adjacencyGraph = {};
+  FLIGHTS.forEach(function(flight){ if (!adjacencyGraph[flight.from]) adjacencyGraph[flight.from] = []; adjacencyGraph[flight.from].push(flight); });
+  foundItineraries = [];
+  function dfs(currentAirport, pathSoFar) {
+    if (foundItineraries.length >= 6) return;
+    var outbound = adjacencyGraph[currentAirport] || [];
+    for (var i = 0; i < outbound.length; i++) {
+      var flight = outbound[i];
+      if (pathSoFar.some(function(x){ return x.num === flight.num; })) continue;
+      if (areTooClose(flight.from, flight.to)) continue;
+      if (pathSoFar.length > 0) {
+        var connectionGap = timeToMinutes(flight.dep) - timeToMinutes(pathSoFar[pathSoFar.length-1].arr);
+        if (connectionGap < 0) connectionGap += 1440;  // day-wrap: connecting flight departs after midnight
+        if (connectionGap < 30 || connectionGap > 360) continue;
       }
-      var np = path.concat([f]);
-      if (f.to === to) {
-        itin.push(np);
-      } else if (path.length < ms) {
+      var updatedPath = pathSoFar.concat([flight]);
+      if (flight.to === destCode) {
+        foundItineraries.push(updatedPath);
+      } else if (pathSoFar.length < maxStops) {
         // Only recurse if we still have stop budget remaining.
-        // ms=0 → never recurse (nonstop only), ms=1 → recurse once, etc.
-        dfs(f.to, np);
+        // maxStops=0 → never recurse (nonstop only), maxStops=1 → recurse once, etc.
+        dfs(flight.to, updatedPath);
       }
     }
   }
-  dfs(fr, []);
-  renderResults();
+  dfs(originCode, []);
+  displaySearchResults();
 }
 
-function renderResults() {
-  var el = document.getElementById('results');
-  if (!itin.length) {
-    el.innerHTML = '<p style="color:var(--dim);padding:16px">No flights found. Try allowing more connections.</p>';
+/* displaySearchResults()
+   Renders the found itineraries as selectable cards in #results.
+   Each card shows the route, stops, flight numbers, and economy fare. */
+function displaySearchResults() {
+  var container = document.getElementById('results');
+  if (!foundItineraries.length) {
+    container.innerHTML = '<p style="color:var(--dim);padding:16px">No flights found. Try allowing more connections.</p>';
     return;
   }
   var html = '';
-  for (var i = 0; i < itin.length; i++) {
-    var legs = itin[i], stops = legs.length - 1, fare = baseFare(legs);
-    var sl   = stops === 0 ? 'Nonstop' : stops + ' stop' + (stops > 1 ? 's' : '');
+  for (var i = 0; i < foundItineraries.length; i++) {
+    var legs = foundItineraries[i], stops = legs.length - 1, fare = calcTotalFare(legs);
+    var stopLabel = stops === 0 ? 'Nonstop' : stops + ' stop' + (stops > 1 ? 's' : '');
     // Build leg details — always shown (nonstop shows single row, connections show all legs + per-leg prices)
-    var legH = '';
+    var legDetailsHtml = '';
     for (var j = 0; j < legs.length; j++) {
-      var l = legs[j];
-      var lf = legFare(l);
-      legH += '<div class="lr">' +
-              '<span class="mn" style="color:var(--lav)">' + l.num + '</span>' +
-              '<span>' + l.from + ' \u2192 ' + l.to + '</span>' +
-              '<span style="margin-left:auto;color:var(--dim)">' + l.dep + '&ndash;' + l.arr + '</span>' +
-              '<span class="tag" style="margin-left:6px">' + l.type + '</span>' +
-              (stops > 0 ? '<span style="margin-left:8px;color:var(--ok);font-size:10px">$' + lf + '</span>' : '') +
+      var leg = legs[j];
+      var legFareAmt = calcLegFare(leg);
+      legDetailsHtml += '<div class="lr">' +
+              '<span class="mn" style="color:var(--lav)">' + leg.num + '</span>' +
+              '<span>' + leg.from + ' \u2192 ' + leg.to + '</span>' +
+              '<span style="margin-left:auto;color:var(--dim)">' + leg.dep + '&ndash;' + leg.arr + '</span>' +
+              '<span class="tag" style="margin-left:6px">' + leg.type + '</span>' +
+              (stops > 0 ? '<span style="margin-left:8px;color:var(--ok);font-size:10px">$' + legFareAmt + '</span>' : '') +
               '</div>';
       if (j < legs.length - 1) {
-        var gap = mins(legs[j+1].dep) - mins(l.arr);
-        if (gap < 0) gap += 1440;
-        legH += '<div class="lay">' + gap + ' min layover at ' + l.to + '</div>';
+        var layoverMinutes = timeToMinutes(legs[j+1].dep) - timeToMinutes(leg.arr);
+        if (layoverMinutes < 0) layoverMinutes += 1440;
+        legDetailsHtml += '<div class="lay">' + layoverMinutes + ' min layover at ' + leg.to + '</div>';
       }
     }
-    html += '<div class="fc' + (i === 0 ? ' sel' : '') + '" onclick="pickItin(' + i + ')">';
+    html += '<div class="fc' + (i === 0 ? ' sel' : '') + '" onclick="selectItinerary(' + i + ')">';
     html += '<div class="fm">';
     html += '<div style="display:flex;align-items:center;gap:10px">';
     html += '<div><div style="font-family:Orbitron,monospace;font-size:16px;font-weight:700">' + legs[0].from + '</div>';
@@ -405,141 +408,141 @@ function renderResults() {
     html += '<div style="font-size:10px;color:var(--dim)">' + legs[legs.length-1].arr + '</div></div></div>';
     html += '<div style="text-align:center">';
     html += '<div class="mn" style="color:var(--lav);font-size:10px">' + legs.map(function(x){ return x.num; }).join(' + ') + '</div>';
-    html += '<div style="font-size:11px;color:var(--dim)">' + sl + '</div>';
+    html += '<div style="font-size:11px;color:var(--dim)">' + stopLabel + '</div>';
     html += '<span class="badge b-ok" style="margin-top:2px">On Time</span></div>';
     html += '<div style="text-align:right">';
     html += '<div style="font-family:Orbitron,monospace;font-size:14px;color:var(--pk2)">from $' + fare + '</div>';
     html += '<div style="font-size:10px;color:var(--dim)">economy per person' + (stops > 0 ? ' (total)' : '') + '</div>';
     html += '<button class="btn bp sm" style="margin-top:5px">Select</button></div></div>';
-    html += '<div class="fl">' + legH + '</div>';
+    html += '<div class="fl">' + legDetailsHtml + '</div>';
     html += '</div>';
   }
-  el.innerHTML = html;
+  container.innerHTML = html;
 }
 
-/* pickItin(i) — called when the user clicks "Select" on a result card;
-   stores the chosen legs in selLegs and navigates to the class-selection step. */
-function pickItin(i) { selLegs = itin[i]; buildCls(); go('class'); }
+/* selectItinerary(i) — called when the user clicks "Select" on a result card;
+   stores the chosen legs in selectedLegs and navigates to the class-selection step. */
+function selectItinerary(i) { selectedLegs = foundItineraries[i]; renderCabinStep(); navigateTo('class'); }
 
-/* buildCls()
+/* renderCabinStep()
    Populates the class-selection panel (step 3) with the selected itinerary.
    Economy = sum of per-leg fares (margin-adjusted). First = 4.0×.
    For multi-leg itineraries, shows per-leg breakdown below the journey header. */
-function buildCls() {
-  if (!selLegs) return;
-  var base = baseFare(selLegs);
+function renderCabinStep() {
+  if (!selectedLegs) return;
+  var base = calcTotalFare(selectedLegs);
   document.getElementById('cls-sub').textContent =
-    selLegs[0].from + ' to ' + selLegs[selLegs.length-1].to + ' \u2014 ' +
-    (selLegs.length === 1 ? 'Nonstop' : (selLegs.length-1) + ' stop' + (selLegs.length > 2 ? 's' : ''));
+    selectedLegs[0].from + ' to ' + selectedLegs[selectedLegs.length-1].to + ' \u2014 ' +
+    (selectedLegs.length === 1 ? 'Nonstop' : (selectedLegs.length-1) + ' stop' + (selectedLegs.length > 2 ? 's' : ''));
   document.getElementById('cp-e').textContent = '$' + base;
   document.getElementById('cp-f').textContent = '$' + Math.round(base * 4);
 
   // Journey header
-  var jh = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:' + (selLegs.length > 1 ? '10px' : '0') + '">' +
-    '<div style="text-align:center"><div style="font-family:Orbitron,monospace;font-size:18px;color:var(--lav)">' + selLegs[0].from + '</div>' +
-    '<div style="font-size:10px;color:var(--dim)">' + selLegs[0].dep + '</div></div>' +
+  var journeyHtml = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:' + (selectedLegs.length > 1 ? '10px' : '0') + '">' +
+    '<div style="text-align:center"><div style="font-family:Orbitron,monospace;font-size:18px;color:var(--lav)">' + selectedLegs[0].from + '</div>' +
+    '<div style="font-size:10px;color:var(--dim)">' + selectedLegs[0].dep + '</div></div>' +
     '<div style="color:#6b5fff;flex:1;text-align:center">&#x2192;</div>' +
-    '<div style="text-align:center"><div style="font-family:Orbitron,monospace;font-size:18px;color:var(--lav)">' + selLegs[selLegs.length-1].to + '</div>' +
-    '<div style="font-size:10px;color:var(--dim)">' + selLegs[selLegs.length-1].arr + '</div></div></div>';
+    '<div style="text-align:center"><div style="font-family:Orbitron,monospace;font-size:18px;color:var(--lav)">' + selectedLegs[selectedLegs.length-1].to + '</div>' +
+    '<div style="font-size:10px;color:var(--dim)">' + selectedLegs[selectedLegs.length-1].arr + '</div></div></div>';
 
   // Per-leg price breakdown for connections
-  if (selLegs.length > 1) {
-    jh += '<div style="font-size:11px">';
-    selLegs.forEach(function(l) {
-      jh += '<div class="row"><span style="color:var(--dim)">' + l.from + ' \u2192 ' + l.to +
-            ' <span class="mn" style="font-size:10px;color:var(--lav)">' + l.num + '</span></span>' +
-            '<span style="color:var(--ok)">$' + legFare(l) + '</span></div>';
+  if (selectedLegs.length > 1) {
+    journeyHtml += '<div style="font-size:11px">';
+    selectedLegs.forEach(function(leg) {
+      journeyHtml += '<div class="row"><span style="color:var(--dim)">' + leg.from + ' \u2192 ' + leg.to +
+            ' <span class="mn" style="font-size:10px;color:var(--lav)">' + leg.num + '</span></span>' +
+            '<span style="color:var(--ok)">$' + calcLegFare(leg) + '</span></div>';
     });
-    jh += '<div class="divl" style="margin:4px 0"></div>';
-    jh += '<div class="row"><strong>Economy total</strong><strong style="color:var(--ok)">$' + base + '</strong></div>';
-    jh += '</div>';
+    journeyHtml += '<div class="divl" style="margin:4px 0"></div>';
+    journeyHtml += '<div class="row"><strong>Economy total</strong><strong style="color:var(--ok)">$' + base + '</strong></div>';
+    journeyHtml += '</div>';
   }
 
-  document.getElementById('cls-journey').innerHTML = jh;
-  pickCls('e');
+  document.getElementById('cls-journey').innerHTML = journeyHtml;
+  selectCabin('e');
 }
 
-/* pickCls(c)
+/* selectCabin(cabinCode)
    Highlights the selected cabin card and updates the "What's Included" checklist.
    Economy gets carry-on only. First gets everything. */
-function pickCls(c) {
-  curCls = c;
+function selectCabin(cabinCode) {
+  selectedClass = cabinCode;
   ['e','f'].forEach(function(x){
     var el = document.getElementById('cl-'+x);
-    if (el) el.className = 'cl' + (c === x ? ' c'+x : '');
+    if (el) el.className = 'cl' + (cabinCode === x ? ' c'+x : '');
   });
-  var inc = {e:[0,0,0,0,0,0,0], f:[1,1,1,1,1,1,1]}[c] || [0,0,0,0,0,0,0];
+  var amenitiesIncluded = {e:[0,0,0,0,0,0,0], f:[1,1,1,1,1,1,1]}[cabinCode] || [0,0,0,0,0,0,0];
   for (var n = 1; n <= 7; n++) {
-    document.getElementById('i'+n).innerHTML = inc[n-1]
+    document.getElementById('i'+n).innerHTML = amenitiesIncluded[n-1]
       ? '<span style="color:var(--ok)">yes</span>'
       : '<span style="color:var(--dim)">no</span>';
   }
 }
 
-/* buildConf()
-   ───────────
+/* renderConfirmStep()
+   ───────────────────
    Builds the Step 4 confirmation panel.
 
    Price calculation:
-     base   = sum of per-leg economy fares (getCpm × getMarginScale applied in legFare)
-     fare   = base × class multiplier (1× economy, 4× first)
-     tax    = fare × 11.5%  (federal excise tax + per-segment fees — see IRS §4261)
-     sur    = fare × 2.0%   (airport facility surcharge)
-     total  = fare + tax + sur
+     base          = sum of per-leg economy fares (getCentsPerNm × getMarginMultiplier applied in calcLegFare)
+     fare          = base × class multiplier (1× economy, 4× first)
+     tax           = fare × 11.5%  (federal excise tax + per-segment fees — see IRS §4261)
+     airportSurcharge = fare × 2.0%   (airport facility surcharge)
+     total         = fare + tax + airportSurcharge
 
-   The total is saved to window._total so confirmBooking() can POST it to the API
-   and buildDone() can display it on the final confirmation screen.
+   The total is saved to window._total so submitBooking() can POST it to the API
+   and renderDoneStep() can display it on the final confirmation screen.
 
    The journey section shows each leg with its departure/arrival times and, for
    multi-leg itineraries, the per-leg fare contribution and layover duration. */
-function buildConf() {
-  if (!selLegs) return;
-  var mult   = {e:1, f:4}[curCls] || 1;
-  var clName = {e:'Economy', f:'First Class'}[curCls] || 'Economy';
-  var base   = baseFare(selLegs);   // margin-aware total across all legs
-  var fare   = Math.round(base * mult);
-  var tax    = Math.round(fare * 0.115);
-  var sur    = Math.round(fare * 0.02);
-  var total  = fare + tax + sur;
+function renderConfirmStep() {
+  if (!selectedLegs) return;
+  var classMultiplier = {e:1, f:4}[selectedClass] || 1;
+  var className       = {e:'Economy', f:'First Class'}[selectedClass] || 'Economy';
+  var base            = calcTotalFare(selectedLegs);   // margin-aware total across all legs
+  var fare            = Math.round(base * classMultiplier);
+  var tax             = Math.round(fare * 0.115);
+  var airportSurcharge = Math.round(fare * 0.02);
+  var total           = fare + tax + airportSurcharge;
   window._total = total;
 
   // Journey with per-leg fares
-  var jh = '';
-  for (var i = 0; i < selLegs.length; i++) {
-    var l  = selLegs[i];
-    var lf = Math.round(legFare(l) * mult);
-    jh += '<div class="row">' +
-          '<div><span class="mn" style="color:var(--lav)">' + l.num + '</span> <strong>' + l.from + ' \u2192 ' + l.to + '</strong></div>' +
+  var journeyHtml = '';
+  for (var i = 0; i < selectedLegs.length; i++) {
+    var leg       = selectedLegs[i];
+    var legFareAmt = Math.round(calcLegFare(leg) * classMultiplier);
+    journeyHtml += '<div class="row">' +
+          '<div><span class="mn" style="color:var(--lav)">' + leg.num + '</span> <strong>' + leg.from + ' \u2192 ' + leg.to + '</strong></div>' +
           '<div style="display:flex;gap:8px;align-items:center">' +
-          '<span style="color:var(--dim)">' + l.dep + '\u2013' + l.arr + '</span>' +
-          '<span class="tag">' + l.type + '</span>' +
-          (selLegs.length > 1 ? '<span style="color:var(--ok);font-size:11px">$' + lf + '</span>' : '') +
+          '<span style="color:var(--dim)">' + leg.dep + '\u2013' + leg.arr + '</span>' +
+          '<span class="tag">' + leg.type + '</span>' +
+          (selectedLegs.length > 1 ? '<span style="color:var(--ok);font-size:11px">$' + legFareAmt + '</span>' : '') +
           '</div></div>';
-    if (i < selLegs.length - 1) {
-      var gap = mins(selLegs[i+1].dep) - mins(l.arr);
-      jh += '<div style="font-size:10px;color:var(--warn);padding:2px 0 2px 16px">' + gap + ' min layover at ' + l.to + '</div>';
+    if (i < selectedLegs.length - 1) {
+      var layoverMinutes = timeToMinutes(selectedLegs[i+1].dep) - timeToMinutes(leg.arr);
+      journeyHtml += '<div style="font-size:10px;color:var(--warn);padding:2px 0 2px 16px">' + layoverMinutes + ' min layover at ' + leg.to + '</div>';
     }
   }
-  document.getElementById('conf-journey').innerHTML = jh;
+  document.getElementById('conf-journey').innerHTML = journeyHtml;
 
   // Price breakdown
-  var ph = '';
-  if (selLegs.length > 1) {
+  var priceHtml = '';
+  if (selectedLegs.length > 1) {
     // Show per-leg economy sub-fares
-    selLegs.forEach(function(l) {
-      var lf = Math.round(legFare(l) * mult);
-      ph += '<div class="row"><span style="color:var(--dim)">' + l.from + '\u2192' + l.to + ' (' + clName + ')</span><span>$' + lf.toLocaleString() + '</span></div>';
+    selectedLegs.forEach(function(leg) {
+      var legFareAmt = Math.round(calcLegFare(leg) * classMultiplier);
+      priceHtml += '<div class="row"><span style="color:var(--dim)">' + leg.from + '\u2192' + leg.to + ' (' + className + ')</span><span>$' + legFareAmt.toLocaleString() + '</span></div>';
     });
-    ph += '<div class="divl" style="margin:4px 0"></div>';
+    priceHtml += '<div class="divl" style="margin:4px 0"></div>';
   }
-  ph += '<div class="row"><span style="color:var(--dim)">Base ' + clName + '</span><span>$' + fare.toLocaleString() + '</span></div>';
-  ph += '<div class="row"><span style="color:var(--dim)">Taxes and fees (11.5%)</span><span>$' + tax.toLocaleString() + '</span></div>';
-  ph += '<div class="row"><span style="color:var(--dim)">Airport surcharge (2%)</span><span>$' + sur.toLocaleString() + '</span></div>';
-  ph += '<div class="row"><strong>Total</strong><strong style="color:var(--pk2)">$' + total.toLocaleString() + '</strong></div>';
-  document.getElementById('conf-price').innerHTML = ph;
+  priceHtml += '<div class="row"><span style="color:var(--dim)">Base ' + className + '</span><span>$' + fare.toLocaleString() + '</span></div>';
+  priceHtml += '<div class="row"><span style="color:var(--dim)">Taxes and fees (11.5%)</span><span>$' + tax.toLocaleString() + '</span></div>';
+  priceHtml += '<div class="row"><span style="color:var(--dim)">Airport surcharge (2%)</span><span>$' + airportSurcharge.toLocaleString() + '</span></div>';
+  priceHtml += '<div class="row"><strong>Total</strong><strong style="color:var(--pk2)">$' + total.toLocaleString() + '</strong></div>';
+  document.getElementById('conf-price').innerHTML = priceHtml;
 }
 
-/* confirmBooking()
+/* submitBooking()
    ─────────────────
    Step 4 → Step 5 transition.
 
@@ -551,44 +554,44 @@ function buildConf() {
       demo can proceed without a running backend — the passenger just won't be
       persisted to the database.
    5. Navigates to the Done screen in either case. */
-function confirmBooking() {
+function submitBooking() {
   var first = document.getElementById('p-first').value.trim();
   var last  = document.getElementById('p-last').value.trim();
   var email = document.getElementById('p-email').value.trim();
   if (!first || !last || !email) { alert('Please fill in all passenger details.'); return; }
-  var body = {
+  var payload = {
     first_name:      first,
     last_name:       last,
     email:           email,
-    seat_class:      {e:'economy', f:'first'}[curCls] || 'economy',
+    seat_class:      {e:'economy', f:'first'}[selectedClass] || 'economy',
     total_price_usd: window._total || 0
   };
   fetch(API_BASE + '/api/bookings', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body)
+    body: JSON.stringify(payload)
   })
   .then(function(res){ return res.json(); })
   .then(function(data){
     window._bookingRef = data.booking_ref || ('PCA-' + Math.floor(10000 + Math.random()*90000));
-    go('done');
+    navigateTo('done');
   })
   .catch(function(){
     window._bookingRef = 'PCA-' + Math.floor(10000 + Math.random()*90000);
-    go('done');
+    navigateTo('done');
   });
 }
 
-/* buildDone() — populates the Done screen with the booking reference and itinerary summary */
-function buildDone() {
+/* renderDoneStep() — populates the Done screen with the booking reference and itinerary summary */
+function renderDoneStep() {
   document.getElementById('ref-num').textContent = window._bookingRef || ('PCA-' + Math.floor(10000 + Math.random()*90000));
-  if (!selLegs) return;
-  var cl = {e:'Economy', f:'First Class'}[curCls] || 'Economy';
-  var dh = '<div><span style="color:var(--dim)">Route</span><br>'   + selLegs[0].from + ' to ' + selLegs[selLegs.length-1].to + '</div>';
-  dh    += '<div><span style="color:var(--dim)">Departs</span><br>' + selLegs[0].dep + '</div>';
-  dh    += '<div><span style="color:var(--dim)">Class</span><br>'   + cl + '</div>';
-  dh    += '<div><span style="color:var(--dim)">Paid</span><br><span style="color:var(--pk2)">$' + (window._total || 0).toLocaleString() + '</span></div>';
-  document.getElementById('done-det').innerHTML = dh;
+  if (!selectedLegs) return;
+  var cabinLabel = {e:'Economy', f:'First Class'}[selectedClass] || 'Economy';
+  var detailsHtml = '<div><span style="color:var(--dim)">Route</span><br>'   + selectedLegs[0].from + ' to ' + selectedLegs[selectedLegs.length-1].to + '</div>';
+  detailsHtml    += '<div><span style="color:var(--dim)">Departs</span><br>' + selectedLegs[0].dep + '</div>';
+  detailsHtml    += '<div><span style="color:var(--dim)">Class</span><br>'   + cabinLabel + '</div>';
+  detailsHtml    += '<div><span style="color:var(--dim)">Paid</span><br><span style="color:var(--pk2)">$' + (window._total || 0).toLocaleString() + '</span></div>';
+  document.getElementById('done-det').innerHTML = detailsHtml;
 }
 
 /* init()
@@ -601,16 +604,16 @@ function buildDone() {
    4. Load airport data from /api/airports to populate origin/destination dropdowns.
    5. Quick-book integration: schedule.html's "Book" button stores the route in
       sessionStorage under 'pca_qb_from' and 'pca_qb_to'.  If those keys are set,
-      pre-fill the search form and immediately run doSearch() so the user lands
+      pre-fill the search form and immediately run searchFlights() so the user lands
       directly on the results for that route.  Keys are deleted after reading to
       prevent stale state on back-navigation. */
 async function init() {
-  setupTheme();
+  applyTheme();
   var auth = checkAuth();
   if (!auth) return;
-  setupNav(auth);
-  await loadAirports();
-  populateSels();
+  initNavBar(auth);
+  await fetchAirports();
+  fillRouteDropdowns();
 
   // Check for a quick-book route passed from schedule.html
   var qbFrom = sessionStorage.getItem('pca_qb_from');
@@ -620,10 +623,10 @@ async function init() {
     sessionStorage.removeItem('pca_qb_to');
     document.getElementById('b-from').value = qbFrom;
     document.getElementById('b-to').value   = qbTo;
-    showPage('book');
-    doSearch();
+    showBookingStep('book');
+    searchFlights();
   } else {
-    showPage('book');
+    showBookingStep('book');
   }
 }
 

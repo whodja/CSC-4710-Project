@@ -1,11 +1,3 @@
-
-Gracie Mitchell
-CSC-4710
-The Future Unemployed
-File name: schedule.html
-
-
-
 <!DOCTYPE html>
 <!-- schedule.html — Panther Cloud Air Daily Flight Schedule
      ═══════════════════════════════════════════════════════════
@@ -20,8 +12,8 @@ File name: schedule.html
      ───────
      Origin (#sf-from), Destination (#sf-to), and Aircraft Type (#sf-type)
      dropdowns filter the FLIGHTS array client-side — no API call needed.
-     filterSched() applies all three simultaneously; resetSched() clears them.
-     Origin and destination selects are populated by populateSels() in shared.js.
+     applyFilters() applies all three simultaneously; clearFilters() clears them.
+     Origin and destination selects are populated by fillRouteDropdowns() in shared.js.
 
      LOAD FACTOR VISUALIZATION
      ─────────────────────────
@@ -31,12 +23,12 @@ File name: schedule.html
 
      QUICK-BOOK INTEGRATION
      ──────────────────────
-     Every row has a "Book" button that calls quickBook(fr, to):
+     Every row has a "Book" button that calls bookRoute(fr, to):
        1. Stores the origin/destination in sessionStorage under
           'pca_qb_from' / 'pca_qb_to'.
        2. Navigates to book.html.
        3. book.html's init() detects those keys, pre-fills the search form,
-          and immediately runs doSearch() so the user lands on results
+          and immediately runs searchFlights() so the user lands on results
           for that exact route. -->
 <html lang="en">
 <head>
@@ -48,25 +40,25 @@ File name: schedule.html
 </head>
 <body>
 
-<!-- Shared navigation bar (role-aware nav buttons revealed by setupNav()) -->
+<!-- Shared navigation bar (role-aware nav buttons revealed by initNavBar()) -->
 <nav id="nav">
   <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
-  <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
-  <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
-  <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
-  <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
-  <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
+  <button class="nb" id="nb-airports"  onclick="navigateTo('airports')">Airports</button>
+  <button class="nb" id="nb-schedule"  onclick="navigateTo('schedule')">Schedule</button>
+  <button class="nb" id="nb-book"      onclick="navigateTo('book')">Book Flight</button>
+  <button class="nb" id="nb-employee"  style="display:none" onclick="navigateTo('employee')">Employee</button>
+  <button class="nb" id="nb-admin"     style="display:none" onclick="navigateTo('admin')">Admin</button>
   <div id="nav-right">
     <div class="theme-sw-wrap">
       <span>Light</span>
       <label class="theme-sw">
-        <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+        <input type="checkbox" id="theme-chk" onchange="setTheme(this.checked)">
         <span class="theme-sw-slider"></span>
       </label>
     </div>
-    <span id="nav-name"></span>  <!-- logged-in username, set by setupNav() -->
-    <span id="nav-role"></span>  <!-- role badge, set by setupNav() -->
-    <button class="nb-out" onclick="doLogout()">Sign out</button>
+    <span id="nav-name"></span>  <!-- logged-in username, set by initNavBar() -->
+    <span id="nav-role"></span>  <!-- role badge, set by initNavBar() -->
+    <button class="nb-out" onclick="logout()">Sign out</button>
   </div>
 </nav>
 
@@ -75,14 +67,14 @@ File name: schedule.html
   <div class="ph">
     <div>
       <h1>Flight Schedule</h1>
-      <!-- #sched-sub is updated by buildSched() with the flight count, e.g. "245 flights today" -->
+      <!-- #sched-sub is updated by renderSchedule() with the flight count, e.g. "245 flights today" -->
       <div class="sub" id="sched-sub">loading&hellip;</div>
     </div>
-    <button class="btn bp sm" onclick="go('book')">+ Book</button>
+    <button class="btn bp sm" onclick="navigateTo('book')">+ Book</button>
   </div>
 
   <!-- Filter bar: origin (#sf-from), destination (#sf-to), aircraft type (#sf-type).
-       populateSels() in shared.js fills the airport dropdowns from the AIRPORTS array. -->
+       fillRouteDropdowns() in shared.js fills the airport dropdowns from the AIRPORTS array. -->
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end">
     <div><label>Origin</label><select id="sf-from" style="width:120px"><option value="">All</option></select></div>
     <div><label>Dest</label>  <select id="sf-to"   style="width:120px"><option value="">All</option></select></div>
@@ -95,12 +87,12 @@ File name: schedule.html
         <option>B736</option><option>B738</option>
       </select>
     </div>
-    <button class="btn bp sm" onclick="filterSched()">Filter</button>
-    <button class="btn bg2 sm" onclick="resetSched()">Reset</button>
+    <button class="btn bp sm" onclick="applyFilters()">Filter</button>
+    <button class="btn bg2 sm" onclick="clearFilters()">Reset</button>
   </div>
 
   <!-- Schedule table: one row per flight from the FLIGHTS array (or filtered subset).
-       #sched-body is populated dynamically by buildSched(). -->
+       #sched-body is populated dynamically by renderSchedule(). -->
   <div class="tw">
     <table>
       <thead>
@@ -119,14 +111,14 @@ File name: schedule.html
 <script>
 'use strict';
 
-/* buildSched(list)
+/* renderSchedule(flightList)
    Renders the schedule table from a flight array.
    Calculates load factor (pax/seats) and draws a small progress bar per row;
    bars under 30% are highlighted in yellow to flag under-loaded flights. */
-function buildSched(list) {
-  document.getElementById('sched-sub').textContent = list.length + ' flights today';
+function renderSchedule(flightList) {
+  document.getElementById('sched-sub').textContent = flightList.length + ' flights today';
   var html = '';
-  list.forEach(function(f){
+  flightList.forEach(function(f){
     var pct = Math.round(f.pax / f.seats * 100);
     html += '<tr>';
     html += '<td><span class="mn" style="color:var(--lav)">' + f.num + '</span></td>';
@@ -140,35 +132,35 @@ function buildSched(list) {
     // Load bar turns warning color if below 30% capacity
     html += '<td>' + pct + '%<div class="bar" style="width:50px"><div class="bf" style="width:' + pct + '%;' + (pct < 30 ? 'background:var(--warn)' : '') + '"></div></div></td>';
     // Quick-book button stores the route in sessionStorage and navigates to book.html
-    html += '<td><button class="btn bg2 sm" data-fr="' + f.from + '" data-to="' + f.to + '" onclick="quickBook(this.dataset.fr,this.dataset.to)">Book</button></td>';
+    html += '<td><button class="btn bg2 sm" data-fr="' + f.from + '" data-to="' + f.to + '" onclick="bookRoute(this.dataset.fr,this.dataset.to)">Book</button></td>';
     html += '</tr>';
   });
   document.getElementById('sched-body').innerHTML = html;
 }
 
-/* filterSched() — reads the three filter dropdowns and passes the filtered
-   FLIGHTS subset to buildSched(). Empty selection means "no filter for that field". */
-function filterSched() {
+/* applyFilters() — reads the three filter dropdowns and passes the filtered
+   FLIGHTS subset to renderSchedule(). Empty selection means "no filter for that field". */
+function applyFilters() {
   var fr = document.getElementById('sf-from').value;
   var to = document.getElementById('sf-to').value;
   var ty = document.getElementById('sf-type').value;
-  buildSched(FLIGHTS.filter(function(f){
+  renderSchedule(FLIGHTS.filter(function(f){
     return (!fr || f.from === fr) && (!to || f.to === to) && (!ty || f.type === ty);
   }));
 }
 
-/* resetSched() — clears all three filters and re-renders the full schedule */
-function resetSched() {
+/* clearFilters() — clears all three filters and re-renders the full schedule */
+function clearFilters() {
   ['sf-from','sf-to','sf-type'].forEach(function(id){ document.getElementById(id).value = ''; });
-  buildSched(FLIGHTS);
+  renderSchedule(FLIGHTS);
 }
 
-/* quickBook(fr, to)
+/* bookRoute(originCode, destCode)
    Stores the selected route in sessionStorage so book.html can pre-fill
    the search form and immediately run a search on arrival. */
-function quickBook(fr, to) {
-  sessionStorage.setItem('pca_qb_from', fr);
-  sessionStorage.setItem('pca_qb_to',   to);
+function bookRoute(originCode, destCode) {
+  sessionStorage.setItem('pca_qb_from', originCode);
+  sessionStorage.setItem('pca_qb_to',   destCode);
   window.location.href = 'book.html';
 }
 
@@ -177,13 +169,13 @@ function quickBook(fr, to) {
    2. Load airport data for the filter dropdowns
    3. Populate origin/dest selects, then render the full schedule */
 async function init() {
-  setupTheme();
+  applyTheme();
   var auth = checkAuth();
   if (!auth) return;
-  setupNav(auth);
-  await loadAirports();
-  populateSels();   // fills #sf-from and #sf-to from shared.js
-  buildSched(FLIGHTS);
+  initNavBar(auth);
+  await fetchAirports();
+  fillRouteDropdowns();   // fills #sf-from and #sf-to from shared.js
+  renderSchedule(FLIGHTS);
 }
 
 init();

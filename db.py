@@ -1,5 +1,4 @@
-#Graham McCabe 
-#db.py
+# db.py
 # Handles the connection to the MariaDB database.
 # All connection parameters are read from environment variables so that the
 # same code works both locally and inside Docker (where the DB host differs).

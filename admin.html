@@ -29,7 +29,7 @@
                   strike, demand spike, etc.) that modifies cancellation rate,
                   load factor, and cost multipliers.
                   "Run Next Day" / "Run All 14" / "Reset" control simState.
-                  Revenue is computed from getCpm() × computeMarginScale() so
+                  Revenue is computed from getCentsPerNm() × computeMarginScale() so
                   all stored baseRev values update live when margins change.
                   Clicking a completed day row opens the per-aircraft detail panel
                   with individual flight statuses (on-time / delayed / cancelled).
@@ -49,7 +49,7 @@
 
      PRICING FORMULA (used throughout this file)
      ────────────────────────────────────────────
-     getCpmFare(bm) = max($49, round(bm × 6 nm/min × getCpm()/100))
+     getCpmFare(bm) = max($49, round(bm × 6 nm/min × getCentsPerNm()/100))
      revenue = getCpmFare(bm) × pax × computeMarginScale()
 
      SIMULATION STATE MACHINE
@@ -73,7 +73,7 @@
      buildSparkbar(id, log, n) — mini bar chart for daily P&L
      computeCpmAvgFarePerPax() — fleet-average fare at current ¢/nm (for simulation)
      computeMarginScale()      — revenue multiplier from current margin settings
-filterDayDetail(hub)      — filter per-aircraft detail by hub/international
+     filterDayDetail(hub)      — filter per-aircraft detail by hub/international
      getCpmFare(bm)            — economy fare for a block-minute duration
      renderDayDetail()         — per-aircraft table for a selected simulation day
      refreshSimUI()            — re-render simulation log, summary, spark bars
@@ -85,8 +85,8 @@ filterDayDetail(hub)      — filter per-aircraft detail by hub/international
 
      MODAL + SIDE PANEL
      ───────────────────
-     #m-flt  — "Add New Flight" modal (openMod / closeMod from shared.js)
-     #side   — Aircraft leg detail panel (openSide / closeSide from shared.js) -->
+     #m-flt  — "Add New Flight" modal (showModal / hideModal from shared.js)
+     #side   — Aircraft leg detail panel (showAircraftPanel / hideAircraftPanel from shared.js) -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -100,22 +100,22 @@ filterDayDetail(hub)      — filter per-aircraft detail by hub/international
 <!-- Shared navigation bar -->
 <nav id="nav">
   <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
-  <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
-  <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
-  <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
-  <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
-  <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
+  <button class="nb" id="nb-airports"  onclick="navigateTo('airports')">Airports</button>
+  <button class="nb" id="nb-schedule"  onclick="navigateTo('schedule')">Schedule</button>
+  <button class="nb" id="nb-book"      onclick="navigateTo('book')">Book Flight</button>
+  <button class="nb" id="nb-employee"  style="display:none" onclick="navigateTo('employee')">Employee</button>
+  <button class="nb" id="nb-admin"     style="display:none" onclick="navigateTo('admin')">Admin</button>
   <div id="nav-right">
     <div class="theme-sw-wrap">
       <span>Light</span>
       <label class="theme-sw">
-        <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+        <input type="checkbox" id="theme-chk" onchange="setTheme(this.checked)">
         <span class="theme-sw-slider"></span>
       </label>
     </div>
     <span id="nav-name"></span>
     <span id="nav-role"></span>
-    <button class="nb-out" onclick="doLogout()">Sign out</button>
+    <button class="nb-out" onclick="logout()">Sign out</button>
   </div>
 </nav>
 
@@ -126,17 +126,17 @@ filterDayDetail(hub)      — filter per-aircraft detail by hub/international
     </div>
   </div>
   <div class="tabs" id="adm-tabs">
-    <button class="tab on" onclick="stab('adm','aroutes',this)">Routes</button>
-    <button class="tab"    onclick="stab('adm','afleet',this)">Fleet</button>
-    <button class="tab"    onclick="stab('adm','asim',this)">Simulation</button>
-    <button class="tab"    onclick="stab('adm','apricing',this)">Pricing</button>
+    <button class="tab on" onclick="switchTab('adm','aroutes',this)">Routes</button>
+    <button class="tab"    onclick="switchTab('adm','afleet',this)">Fleet</button>
+    <button class="tab"    onclick="switchTab('adm','asim',this)">Simulation</button>
+    <button class="tab"    onclick="switchTab('adm','apricing',this)">Pricing</button>
   </div>
 
   <!-- Tab: Routes — top 20 routes by passenger volume with revenue, fuel cost, landing fees,
        and per-route P&L. #route-body is populated by buildRouteTable(). -->
   <div class="pan on" id="aroutes">
     <div class="box">
-      <div class="bh"><h2>Route Profitability (Top 20)</h2><button class="btn bg2 sm">CSV</button></div>
+      <div class="bh"><h2>Route Profitability (Top 20)</h2></div>
       <div class="tw">
         <table>
           <thead><tr><th>Route</th><th>Type</th><th>Flights</th><th>Load%</th><th>Revenue</th><th>Fuel</th><th>Fees</th><th>P&amp;L</th></tr></thead>
@@ -148,7 +148,7 @@ filterDayDetail(hub)      — filter per-aircraft detail by hub/international
 
   <!-- Tab: Fleet — per-aircraft performance table (tail, type, base, flights, block hours,
        maintenance hours, load%, status). Aircraft with > 185 maintenance hours show "Maint." badge.
-       #fleet-model-stats shows aggregate stats per model from the DB (loaded via loadAircraft()).
+       #fleet-model-stats shows aggregate stats per model from the DB (loaded via fetchAircraft()).
        "View" opens the side panel for individual leg detail. -->
   <div class="pan" id="afleet">
     <div class="stats" style="margin-bottom:12px" id="fleet-model-stats"></div>
@@ -363,11 +363,11 @@ filterDayDetail(hub)      — filter per-aircraft detail by hub/international
 
 
 <!-- Modal: Add New Flight — overlay form triggered by the "+ New Flight" button.
-     openMod('m-flt') / closeMod('m-flt') from shared.js toggle its visibility.
-     From/To dropdowns are populated by populateSels() at init time. -->
+     showModal('m-flt') / hideModal('m-flt') from shared.js toggle its visibility.
+     From/To dropdowns are populated by fillRouteDropdowns() at init time. -->
 <div class="mbg" id="m-flt">
   <div class="mc2">
-    <button class="mxx" onclick="closeMod('m-flt')">&#x2715;</button>
+    <button class="mxx" onclick="hideModal('m-flt')">&#x2715;</button>
     <h2 style="font-family:'Orbitron',monospace;font-size:13px;color:var(--lav);margin-bottom:14px">Add New Flight</h2>
     <div class="g2">
       <div class="f"><label>From</label><select id="mf-from"></select></div>
@@ -383,10 +383,10 @@ filterDayDetail(hub)      — filter per-aircraft detail by hub/international
 
 <!-- Side Panel: Aircraft detail — slides in from the right when "View" is clicked on a
      fleet row. Shows the tail number, aircraft type, and the list of legs flown today.
-     openSide(tail, type) populates #side-tail, #side-type, and #side-legs;
-     closeSide() hides the panel. -->
+     showAircraftPanel(tail, type) populates #side-tail, #side-type, and #side-legs;
+     hideAircraftPanel() hides the panel. -->
 <div class="side" id="side">
-  <button class="sx" onclick="closeSide()">&#x2715;</button>
+  <button class="sx" onclick="hideAircraftPanel()">&#x2715;</button>
   <div style="font-family:'Orbitron',monospace;font-size:13px;color:var(--lav);margin-bottom:4px" id="side-tail"></div>
   <div style="font-size:11px;color:var(--dim);margin-bottom:10px" id="side-type"></div>
   <div class="divl"></div>
@@ -407,10 +407,10 @@ var margins = (function(){
 })();
 
 /* getCpmFare(bm) — economy fare for a single leg given block minutes.
-   Uses getCpm() from shared.js: fare = max($49, round(bm × 6 × cpm/100)).
+   Uses getCentsPerNm() from shared.js: fare = max($49, round(bm × 6 × cpm/100)).
    6 nm/min is the average ground-speed proxy (~450 kt domestic/international mix). */
 function getCpmFare(bm) {
-  return Math.max(49, Math.round(bm * 6 * getCpm() / 100));
+  return Math.max(49, Math.round(bm * 6 * getCentsPerNm() / 100));
 }
 
 /* computeCpmAvgFarePerPax()
@@ -419,11 +419,11 @@ function getCpmFare(bm) {
    Cached per-cpm value to avoid looping FLIGHTS on every key stroke. */
 var _cpmFareCache = null, _cpmFareCacheKey = null;
 function computeCpmAvgFarePerPax() {
-  var cpm = getCpm();
+  var cpm = getCentsPerNm();
   if (_cpmFareCacheKey === cpm && _cpmFareCache !== null) return _cpmFareCache;
   var totalFare = 0, totalPax = 0;
   FLIGHTS.forEach(function(f) {
-    var bm = mins(f.arr) - mins(f.dep);
+    var bm = timeToMinutes(f.arr) - timeToMinutes(f.dep);
     if (bm <= 0) bm += 1440;
     totalFare += Math.max(49, Math.round(bm * 6 * cpm / 100)) * f.pax;
     totalPax  += f.pax;
@@ -549,19 +549,19 @@ function buildFleet() {
     html += '<td style="color:' + (mh > 185 ? 'var(--warn)' : 'var(--ok)') + '">' + mh + 'h' + (mh > 185 ? ' !' : '') + '</td>';
     html += '<td style="color:' + (load > 30 ? 'var(--ok)' : 'var(--warn)') + '">' + (noRoute ? '—' : load + '%') + '</td>';
     html += '<td>' + sb + '</td>';
-    html += '<td><button class="btn bg2 sm" data-tail="' + tail + '" data-type="' + d.type + ' - ' + d.base + '" onclick="openSide(this.dataset.tail,this.dataset.type)">View</button></td>';
+    html += '<td><button class="btn bg2 sm" data-tail="' + tail + '" data-type="' + d.type + ' - ' + d.base + '" onclick="showAircraftPanel(this.dataset.tail,this.dataset.type)">View</button></td>';
     html += '</tr>';
   });
   document.getElementById('fleet-body').innerHTML = html;
 }
 
 /* buildFleetModelStats()
-   Reads DB_AIRCRAFT (loaded from /api/aircraft) and groups by model_name to show
+   Reads FLEET_DATA (loaded from /api/aircraft) and groups by model_name to show
    count, total seats, and daily lease cost per aircraft model in the Fleet tab header. */
 function buildFleetModelStats() {
-  if (!DB_AIRCRAFT.length) return;
+  if (!FLEET_DATA.length) return;
   var models = {};
-  DB_AIRCRAFT.forEach(function(a){
+  FLEET_DATA.forEach(function(a){
     var k = a.model_name;
     if (!models[k]) models[k] = {count:0, seats: a.seat_config_economy + a.seat_config_business + a.seat_config_first, lease: a.monthly_lease_usd};
     models[k].count++;
@@ -606,7 +606,7 @@ function buildRouteTable() {
   FLIGHTS.forEach(function(f){
     var k = f.from + '-' + f.to;
     if (!rf[k]) rf[k] = {from:f.from, to:f.to, n:0, pax:0, seats:0, bm:0};
-    rf[k].n++; rf[k].pax += f.pax; rf[k].seats += f.seats; rf[k].bm += mins(f.arr) - mins(f.dep);
+    rf[k].n++; rf[k].pax += f.pax; rf[k].seats += f.seats; rf[k].bm += timeToMinutes(f.arr) - timeToMinutes(f.dep);
   });
   var sorted = Object.values(rf).sort(function(a,b){ return b.pax - a.pax; }).slice(0, 20);
   var html = '';
@@ -680,7 +680,7 @@ function buildPricingAircraftTable() {
     ac.legs.forEach(function(leg) {
       var flt = _flightsByNum[leg.fn];
       if (!flt) return;
-      var bm = mins(leg.arr) - mins(leg.dep);
+      var bm = timeToMinutes(leg.arr) - timeToMinutes(leg.dep);
       if (bm <= 0) return;
       var baseFare = getCpmFare(bm);
       rev  += baseFare * flt.pax * scale;
@@ -1008,7 +1008,7 @@ function renderDayDetail() {
       var r1 = rng(), r2 = rng(), r3 = rng();  // always consume 3 per leg
 
       var flt = _flightsByNum[leg.fn];
-      var bm  = flt ? Math.max(1, mins(leg.arr) - mins(leg.dep)) : 120;
+      var bm  = flt ? Math.max(1, timeToMinutes(leg.arr) - timeToMinutes(leg.dep)) : 120;
       var depDelay = accDelay;  // delay at departure = accumulated from previous legs
 
       if (grounded) {
@@ -1128,24 +1128,24 @@ function renderDayDetail() {
    3. Set up nav, load airports + aircraft (from DB) + pricing in parallel
    4. Populate dropdowns, build fleet/routes tables, initialize empty simulation UI */
 async function init() {
-  setupTheme();
+  applyTheme();
   var auth = checkAuth();
   if (!auth) return;
   if (auth.role !== 'Admin') { window.location.href = 'employee.html'; return; }
-  setupNav(auth);
-  await Promise.all([loadAirports(), loadAircraft(), loadPricing()]);
+  initNavBar(auth);
+  await Promise.all([fetchAirports(), fetchAircraft(), fetchPricing()]);
   // Restore margin slider positions
   ['sh','mh','lh','intl'].forEach(function(k){
     var sl = document.getElementById(k+'-slider'); if (sl) sl.value = margins[k];
     var vl = document.getElementById(k+'-v');      if (vl) vl.textContent = margins[k]+'%';
   });
   // Restore CPM slider position and sample label
-  var cpm = getCpm();
+  var cpm = getCentsPerNm();
   var csl = document.getElementById('cpm-slider'); if (csl) csl.value = cpm;
   var cvl = document.getElementById('cpm-v');      if (cvl) cvl.textContent = cpm + '¢/nm';
   var csp = document.getElementById('cpm-sample'); if (csp) csp.textContent = 'e.g. 500 nm economy flight = $' + Math.max(49, Math.round(500 * cpm / 100));
   applyAutoRoutes();
-  populateSels();
+  fillRouteDropdowns();
   buildFleet();
   buildFleetModelStats();
   buildRouteTable();

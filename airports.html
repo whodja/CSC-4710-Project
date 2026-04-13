@@ -1,13 +1,6 @@
-
-Gracie Mitchell
-CSC-4710
-The Future Unemployed
-File name: airports.html
-
-
 <!DOCTYPE html>
 <!-- airports.html — Panther Cloud Air Airport Network
-     ══════════════════════════════════════════════��════════
+     ══════════════════════════════════════════════════════
 
      PURPOSE
      ───────
@@ -17,7 +10,7 @@ File name: airports.html
 
      DATA SOURCE
      ───────────
-     Primary:  loadAirports() in shared.js fetches /api/airports (Flask → MariaDB).
+     Primary:  fetchAirports() in shared.js fetches /api/airports (Flask → MariaDB).
      Fallback: the static AIRPORTS array in aircraft_schedule.js, used if the DB
                is offline.  In fallback mode city names are blank.
 
@@ -25,14 +18,14 @@ File name: airports.html
      ───────────────────────────────────
      Airports within 150 statute miles of each other have NO direct flights and
      NO demand recorded between them.  The rule is enforced by the TOO_CLOSE Set
-     in aircraft_schedule.js and checked by isTooClose() in shared.js.
+     in aircraft_schedule.js and checked by areTooClose() in shared.js.
      The exclusion pairs are listed in the alert banner on the page and in the
      "Nearby (no service)" column of the airport table.
 
      FILTERING
      ─────────
-     The dropdown at the top calls filterApts() with 'all', 'hub', or 'non'.
-     buildApts(filter) re-renders the table with the matching subset.
+     The dropdown at the top calls onFilterChange() with 'all', 'hub', or 'non'.
+     renderAirportTable(filter) re-renders the table with the matching subset.
 
      HUB AIRPORTS
      ────────────
@@ -52,25 +45,25 @@ File name: airports.html
 
 <!-- Shared top navigation bar.
      Employee/Admin-only nav buttons (#nb-employee, #nb-admin) start hidden;
-     setupNav() in shared.js reveals them based on the user's role. -->
+     initNavBar() in shared.js reveals them based on the user's role. -->
 <nav id="nav">
   <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
-  <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
-  <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
-  <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
-  <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
-  <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
+  <button class="nb" id="nb-airports"  onclick="navigateTo('airports')">Airports</button>
+  <button class="nb" id="nb-schedule"  onclick="navigateTo('schedule')">Schedule</button>
+  <button class="nb" id="nb-book"      onclick="navigateTo('book')">Book Flight</button>
+  <button class="nb" id="nb-employee"  style="display:none" onclick="navigateTo('employee')">Employee</button>
+  <button class="nb" id="nb-admin"     style="display:none" onclick="navigateTo('admin')">Admin</button>
   <div id="nav-right">
     <div class="theme-sw-wrap">
       <span>Light</span>
       <label class="theme-sw">
-        <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+        <input type="checkbox" id="theme-chk" onchange="setTheme(this.checked)">
         <span class="theme-sw-slider"></span>
       </label>
     </div>
-    <span id="nav-name"></span>   <!-- filled by setupNav() with the logged-in username -->
-    <span id="nav-role"></span>   <!-- filled by setupNav() with the user's role badge -->
-    <button class="nb-out" onclick="doLogout()">Sign out</button>
+    <span id="nav-name"></span>   <!-- filled by initNavBar() with the logged-in username -->
+    <span id="nav-role"></span>   <!-- filled by initNavBar() with the user's role badge -->
+    <button class="nb-out" onclick="logout()">Sign out</button>
   </div>
 </nav>
 
@@ -81,8 +74,8 @@ File name: airports.html
       <h1>Airport Network</h1>
       <div class="sub">30 US airports + Paris CDG </div>
     </div>
-    <!-- Dropdown triggers filterApts() to show all airports, hubs only, or non-hubs only -->
-    <select style="width:auto" onchange="filterApts(this.value)">
+    <!-- Dropdown triggers onFilterChange() to show all airports, hubs only, or non-hubs only -->
+    <select style="width:auto" onchange="onFilterChange(this.value)">
       <option value="all">All Airports</option>
       <option value="hub">Hubs Only</option>
       <option value="non">Non-Hubs</option>
@@ -111,21 +104,21 @@ File name: airports.html
           <th>Metro Pop</th><th>Gates</th><th>Hub</th><th>Nearby (no direct service)</th>
         </tr>
       </thead>
-      <!-- #apt-body is populated dynamically by buildApts() below -->
+      <!-- #apt-body is populated dynamically by renderAirportTable() below -->
       <tbody id="apt-body"></tbody>
     </table>
   </div>
 </div>
 
 <!-- aircraft_schedule.js: static data constants (AIRPORTS, TOO_CLOSE, FLIGHTS, DEMAND, etc.)
-     panther_cloud_air_shared.js: shared helpers (setupTheme, checkAuth, setupNav, loadAirports, go, etc.) -->
+     panther_cloud_air_shared.js: shared helpers (applyTheme, checkAuth, initNavBar, fetchAirports, navigateTo, etc.) -->
 <script src="aircraft_schedule.js"></script>
 <script src="panther_cloud_air_shared.js"></script>
 <script>
 'use strict';
 
-/* buildApts(filter)
-   ──────────────────
+/* renderAirportTable(filter)
+   ──────────────────────────
    Renders the airport table for the given filter value ('all' | 'hub' | 'non').
 
    Steps:
@@ -138,10 +131,10 @@ File name: airports.html
         Spoke airports → min(floor(metro_pop_millions), 5), minimum 1
    4. Inject the resulting HTML into #apt-body.
 
-   AIRPORTS is populated by loadAirports() from the /api/airports endpoint.
+   AIRPORTS is populated by fetchAirports() from the /api/airports endpoint.
    If the API was offline, AIRPORTS falls back to the static array in
    aircraft_schedule.js (pop values may differ slightly). */
-function buildApts(filter) {
+function renderAirportTable(filter) {
   // Build a map of iata -> [nearby iata codes] for the "Nearby (no service)" column
   var near = {};
   TOO_CLOSE.forEach(function(k){
@@ -176,8 +169,8 @@ function buildApts(filter) {
   document.getElementById('apt-body').innerHTML = html;
 }
 
-/* filterApts(v) — called by the dropdown onChange; delegates to buildApts */
-function filterApts(v) { buildApts(v); }
+/* onFilterChange(filterValue) — called by the dropdown onChange; delegates to renderAirportTable */
+function onFilterChange(filterValue) { renderAirportTable(filterValue); }
 
 /* init() — entry point:
    1. Apply saved theme preference
@@ -186,12 +179,12 @@ function filterApts(v) { buildApts(v); }
    4. Load airport data from /api/airports (or fall back to static)
    5. Render the default "all airports" table */
 async function init() {
-  setupTheme();
+  applyTheme();
   var auth = checkAuth();
   if (!auth) return;
-  setupNav(auth);
-  await loadAirports();
-  buildApts('all');
+  initNavBar(auth);
+  await fetchAirports();
+  renderAirportTable('all');
 }
 
 init();

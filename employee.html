@@ -1,12 +1,6 @@
-Gracie Mitchell
-CSC-4710
-The Future Unemployed
-File name: employee.html
-
-
 <!DOCTYPE html>
 <!-- employee.html — Panther Cloud Air Employee Portal
-     ══════════════════════════════════════════════��═══════
+     ═══════════════════════════════════════════════════════
 
      ACCESS CONTROL
      ──────────────
@@ -19,9 +13,9 @@ File name: employee.html
      Agent-on-behalf-of-passenger workflow.  The search form (#e-from, #e-to,
      max stops, passenger count) lets an agent set up a search, then clicking
      "Search Flights" navigates to book.html to complete the full booking wizard.
-     Origin/destination dropdowns are populated by populateSels() in shared.js.
+     Origin/destination dropdowns are populated by fillRouteDropdowns() in shared.js.
 
-     "Busiest Routes Today" (buildBusyRoutes()):
+     "Busiest Routes Today" (renderBusiestRoutes()):
        Aggregates FLIGHTS by route key, sorts by total passengers, and renders
        the top 6.  Load factor bars < 30% show a "Low" warning badge to flag
        routes that may need promotions or consolidation.
@@ -35,7 +29,7 @@ File name: employee.html
      KPI tiles: 245 flights, 94% on-time, 3 delays, 11,133 passengers — all
      hard-coded values from the project specification.
 
-     Live Flight Tracker (buildLive()):
+     Live Flight Tracker (renderLiveTracker()):
        Renders the first 10 flights from FLIGHTS with simulated status badges
        (On Time / Delayed +Xm / Boarding).  The statuses are a hard-coded array
        for demo purposes — the real-time status system is out of scope for this
@@ -43,7 +37,7 @@ File name: employee.html
 
      TAB SWITCHING
      ─────────────
-     stab('emp', panelId, btn) from shared.js handles tab visibility.
+     switchTab('emp', panelId, btn) from shared.js handles tab visibility.
      The "Flight Search" tab is active on load. -->
 <html lang="en">
 <head>
@@ -58,22 +52,22 @@ File name: employee.html
 <!-- Shared navigation bar -->
 <nav id="nav">
   <span class="logo">&#x2708; PANTHER CLOUD AIR</span>
-  <button class="nb" id="nb-airports"  onclick="go('airports')">Airports</button>
-  <button class="nb" id="nb-schedule"  onclick="go('schedule')">Schedule</button>
-  <button class="nb" id="nb-book"      onclick="go('book')">Book Flight</button>
-  <button class="nb" id="nb-employee"  style="display:none" onclick="go('employee')">Employee</button>
-  <button class="nb" id="nb-admin"     style="display:none" onclick="go('admin')">Admin</button>
+  <button class="nb" id="nb-airports"  onclick="navigateTo('airports')">Airports</button>
+  <button class="nb" id="nb-schedule"  onclick="navigateTo('schedule')">Schedule</button>
+  <button class="nb" id="nb-book"      onclick="navigateTo('book')">Book Flight</button>
+  <button class="nb" id="nb-employee"  style="display:none" onclick="navigateTo('employee')">Employee</button>
+  <button class="nb" id="nb-admin"     style="display:none" onclick="navigateTo('admin')">Admin</button>
   <div id="nav-right">
     <div class="theme-sw-wrap">
       <span>Light</span>
       <label class="theme-sw">
-        <input type="checkbox" id="theme-chk" onchange="toggleTheme(this.checked)">
+        <input type="checkbox" id="theme-chk" onchange="setTheme(this.checked)">
         <span class="theme-sw-slider"></span>
       </label>
     </div>
     <span id="nav-name"></span>
     <span id="nav-role"></span>
-    <button class="nb-out" onclick="doLogout()">Sign out</button>
+    <button class="nb-out" onclick="logout()">Sign out</button>
   </div>
 </nav>
 
@@ -82,10 +76,10 @@ File name: employee.html
   <div class="ph">
     <div><h1>Employee Portal</h1><div class="sub">Flight operations and live status</div></div>
   </div>
-  <!-- Tab bar: stab('emp', panelId, btn) switches the visible .pan panel -->
+  <!-- Tab bar: switchTab('emp', panelId, btn) switches the visible .pan panel -->
   <div class="tabs" id="emp-tabs">
-    <button class="tab on" onclick="stab('emp','esearch',this)">Flight Search</button>
-    <button class="tab"    onclick="stab('emp','estatus',this)">Live Status</button>
+    <button class="tab on" onclick="switchTab('emp','esearch',this)">Flight Search</button>
+    <button class="tab"    onclick="switchTab('emp','estatus',this)">Live Status</button>
   </div>
 
   <!-- Tab: Flight Search — agent-on-behalf-of-passenger booking workflow.
@@ -95,16 +89,16 @@ File name: employee.html
     <div class="box" style="margin-top:8px">
       <div class="bh"><h2>Passenger Flight Search</h2></div>
       <div class="g4">
-        <!-- #e-from and #e-to are populated by populateSels() in shared.js -->
+        <!-- #e-from and #e-to are populated by fillRouteDropdowns() in shared.js -->
         <div class="f" style="margin:0"><label>Origin</label>      <select id="e-from"></select></div>
         <div class="f" style="margin:0"><label>Destination</label> <select id="e-to"></select></div>
         <div class="f" style="margin:0"><label>Max Stops</label>   <select><option>Nonstop</option><option>1 Stop</option></select></div>
         <div class="f" style="margin:0"><label>Passengers</label>  <select><option>1</option><option>2</option><option>3</option></select></div>
       </div>
-      <button class="btn bp sm" style="margin-top:10px" onclick="go('book')">Search Flights</button>
+      <button class="btn bp sm" style="margin-top:10px" onclick="navigateTo('book')">Search Flights</button>
     </div>
     <div class="g2" style="margin-top:12px">
-      <!-- #busy-routes is populated by buildBusyRoutes(): top 6 routes by passenger volume -->
+      <!-- #busy-routes is populated by renderBusiestRoutes(): top 6 routes by passenger volume -->
       <div class="box">
         <div class="bh"><h2>Busiest Routes Today</h2></div>
         <table><thead><tr><th>Route</th><th>Flights</th><th>Load</th><th>Status</th></tr></thead>
@@ -130,7 +124,7 @@ File name: employee.html
       <div class="stat"><div class="sv">11,133</div>                      <div class="sl">Passengers</div></div>
     </div>
     <!-- Live tracker table: shows the first 10 flights with simulated status badges.
-         #live-body is populated by buildLive() below. -->
+         #live-body is populated by renderLiveTracker() below. -->
     <div class="box">
       <div class="bh"><h2>Live Flight Tracker</h2><span class="badge b-ok">&#x25CF; Live</span></div>
       <div class="tw">
@@ -148,62 +142,63 @@ File name: employee.html
 <script>
 'use strict';
 
-/* buildLive()
+/* renderLiveTracker()
    Renders the first 10 flights from FLIGHTS with hard-coded simulated statuses.
    Delayed flights are highlighted in warning color; Boarding gets a purple badge. */
-function buildLive() {
+function renderLiveTracker() {
   var statuses = ['On Time','On Time','Delayed +12m','On Time','Boarding','On Time','On Time','Delayed +8m','On Time','On Time'];
   var html = '';
   for (var i = 0; i < 10 && i < FLIGHTS.length; i++) {
-    var f = FLIGHTS[i], s = statuses[i];
-    var sb = s.indexOf('Delayed') >= 0
-      ? '<span class="badge b-warn">' + s + '</span>'
-      : s === 'Boarding' ? '<span class="badge b-v">Boarding</span>'
+    var flight = FLIGHTS[i];
+    var statusLabel = statuses[i];
+    var statusBadge = statusLabel.indexOf('Delayed') >= 0
+      ? '<span class="badge b-warn">' + statusLabel + '</span>'
+      : statusLabel === 'Boarding' ? '<span class="badge b-v">Boarding</span>'
       : '<span class="badge b-ok">On Time</span>';
-    html += '<tr><td><span class="mn" style="color:var(--lav)">' + f.num + '</span></td>' +
-            '<td style="font-size:10px;color:var(--dim)">' + f.tail + '</td>' +
-            '<td>' + f.from + ' to ' + f.to + '</td>' +
-            '<td>' + f.dep + '</td>' +
-            '<td style="color:' + (s.indexOf('Delayed') >= 0 ? 'var(--warn)' : 'inherit') + '">' + f.dep + '</td>' +
-            '<td>' + f.arr + '</td><td>' + f.seats + '</td><td>' + f.pax + '</td>' +
-            '<td>' + sb + '</td></tr>';
+    html += '<tr><td><span class="mn" style="color:var(--lav)">' + flight.num + '</span></td>' +
+            '<td style="font-size:10px;color:var(--dim)">' + flight.tail + '</td>' +
+            '<td>' + flight.from + ' to ' + flight.to + '</td>' +
+            '<td>' + flight.dep + '</td>' +
+            '<td style="color:' + (statusLabel.indexOf('Delayed') >= 0 ? 'var(--warn)' : 'inherit') + '">' + flight.dep + '</td>' +
+            '<td>' + flight.arr + '</td><td>' + flight.seats + '</td><td>' + flight.pax + '</td>' +
+            '<td>' + statusBadge + '</td></tr>';
   }
   document.getElementById('live-body').innerHTML = html;
 }
 
-/* buildBusyRoutes()
+/* renderBusiestRoutes()
    Aggregates FLIGHTS by route key (from-to), sorts by total passengers descending,
    and renders the top 6 routes in the "Busiest Routes Today" table.
    Load factor < 30% shows a warning badge. */
-function buildBusyRoutes() {
-  var rf = {};
-  FLIGHTS.forEach(function(f){
-    var k = f.from + '-' + f.to;
-    if (!rf[k]) rf[k] = {from:f.from, to:f.to, n:0, pax:0, seats:0};
-    rf[k].n++; rf[k].pax += f.pax; rf[k].seats += f.seats;
+function renderBusiestRoutes() {
+  var routesByKey = {};
+  FLIGHTS.forEach(function(flight){
+    var key = flight.from + '-' + flight.to;
+    if (!routesByKey[key]) routesByKey[key] = {from:flight.from, to:flight.to, n:0, pax:0, seats:0};
+    routesByKey[key].n++; routesByKey[key].pax += flight.pax; routesByKey[key].seats += flight.seats;
   });
-  var sorted = Object.values(rf).sort(function(a,b){ return b.pax - a.pax; }).slice(0, 6);
+  var sorted = Object.values(routesByKey).sort(function(a,b){ return b.pax - a.pax; }).slice(0, 6);
   var html = '';
-  sorted.forEach(function(r){
-    var load = Math.round(r.pax / r.seats * 100);
-    var col  = load > 30 ? 'var(--ok)' : 'var(--warn)';
-    html += '<tr><td>' + r.from + ' to ' + r.to + '</td><td>' + r.n + '</td>';
-    html += '<td>' + load + '%<div class="bar"><div class="bf" style="width:' + load + '%;background:' + col + '"></div></div></td>';
-    html += '<td>' + (load > 30 ? '<span class="badge b-ok">Good</span>' : '<span class="badge b-warn">Low</span>') + '</td></tr>';
+  sorted.forEach(function(route){
+    var loadFactor = Math.round(route.pax / route.seats * 100);
+    var barColor   = loadFactor > 30 ? 'var(--ok)' : 'var(--warn)';
+    html += '<tr><td>' + route.from + ' to ' + route.to + '</td><td>' + route.n + '</td>';
+    html += '<td>' + loadFactor + '%<div class="bar"><div class="bf" style="width:' + loadFactor + '%;background:' + barColor + '"></div></div></td>';
+    html += '<td>' + (loadFactor > 30 ? '<span class="badge b-ok">Good</span>' : '<span class="badge b-warn">Low</span>') + '</td></tr>';
   });
   document.getElementById('busy-routes').innerHTML = html;
 }
 
 /* init() — page startup: theme, auth, nav, load airports, populate selects, build both panels */
 async function init() {
-  setupTheme();
+  applyTheme();
   var auth = checkAuth();
   if (!auth) return;
-  setupNav(auth);
-  await loadAirports();
-  populateSels();   // fills #e-from and #e-to
-  buildLive();
-  buildBusyRoutes();
+  initNavBar(auth);
+  await fetchAirports();
+  fillRouteDropdowns();   // fills #e-from and #e-to
+  renderLiveTracker();
+  renderBusiestRoutes();
 }
 
 init();

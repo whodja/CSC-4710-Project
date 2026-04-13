@@ -162,8 +162,10 @@ def load_airports(conn):
 
 def load_aircraft(conn):
     """Return all active aircraft joined with model specs, keyed by aircraft_id."""
-    rows = qall(conn, """
-        SELECT a.aircraft_id, a.tail_number, a.model_id, a.status,
+    rows = qall(conn,) 
+    
+    """
+            SELECT a.aircraft_id, a.tail_number, a.model_id, a.status,
                m.cruise_speed_kts, m.max_passengers,
                m.seat_config_economy, m.seat_config_business, m.seat_config_first,
                m.burn_rate_cruise, m.monthly_lease_usd, m.model_name,
@@ -173,7 +175,8 @@ def load_aircraft(conn):
         FROM Aircraft a
         JOIN Aircraft_models m ON a.model_id = m.model_id
         WHERE a.status = 'active'
-    """)
+    """
+    
     return {r["aircraft_id"]: r for r in rows}
 
 def load_distances(conn):
@@ -252,60 +255,84 @@ def generate_timetable(conn, airports, dist_map, dist_id, hub_ac, aircraft):
     Return spoke → hub after turnaround (55 min).
     Stores into Sim_timetable, returns list of timetable dicts.
     """
-    TURNAROUND = 55   # min on ground at spoke
-    DEP_GAP    = 10   # min between successive hub departures
+    TURNAROUND = 55   # min on ground at spoke before the return leg departs
+    DEP_GAP    = 10   # min between successive hub departures to spread traffic
 
     timetable = []
-    fn_counter = 1
+    fn_counter = 1  # global flight-number counter shared across all hubs (PCS0001, PCS0002, …)
 
+    # Iterate over each of the four hubs in order: ATL, DFW, DEN, ORD.
+    # Each hub owns a fixed list of spokes from HUB_ROUTES and a list of
+    # assigned aircraft from hub_ac. One aircraft is paired with one spoke.
     for hub in HUBS:
-        spokes   = HUB_ROUTES[hub]
-        ac_list  = hub_ac[hub]
-        slot_min = FIRST_DEP
+        spokes   = HUB_ROUTES[hub]   # ordered list of destinations this hub serves
+        ac_list  = hub_ac[hub]        # aircraft IDs assigned to this hub
+        slot_min = FIRST_DEP          # first outbound departure starts at 05:00
 
         for i, spoke in enumerate(spokes):
+            # Stop assigning spokes if we run out of aircraft at this hub.
+            # Hub-hub routes at the top of each spoke list consume aircraft first.
             if i >= len(ac_list):
                 break
-            ac_id = ac_list[i]
+
+            ac_id = ac_list[i]   # aircraft assigned to this hub-spoke pair
             ac    = aircraft[ac_id]
 
+            # Lookup keys for outbound and return legs in the distance map.
             key_out = (hub, spoke)
             key_ret = (spoke, hub)
 
+            # Skip this spoke if no distance record exists in the DB for the outbound leg.
+            # This can happen for hub-hub pairs that were not seeded in Flight_distances.
             if key_out not in dist_map:
-                slot_min += DEP_GAP
+                slot_min += DEP_GAP  # still advance the slot so later departures aren't bunched
                 continue
 
-            dist   = dist_map[key_out]
-            did    = dist_id[key_out]
-            speed  = float(ac["cruise_speed_kts"])
+            dist  = dist_map[key_out]   # nautical miles for this city pair
+            did   = dist_id[key_out]    # Flight_distances FK used in Sim_timetable
+            speed = float(ac["cruise_speed_kts"])
 
-            dur_out = int(calc_flight_time(dist, speed, hub, spoke))
-            arr_out = slot_min + dur_out
+            # ── Outbound leg: hub → spoke ──────────────────────────────────────
+            dur_out = int(calc_flight_time(dist, speed, hub, spoke))  # total minutes incl. taxi
+            arr_out = slot_min + dur_out                               # arrival time at spoke
 
+            # ── Return leg: spoke → hub ────────────────────────────────────────
+            # Return departs after the full 55-minute ground turnaround at the spoke.
             dep_ret = arr_out + TURNAROUND
-            dur_ret = int(calc_flight_time(dist, speed, spoke, hub))
+            dur_ret = int(calc_flight_time(dist, speed, spoke, hub))  # return is often different due to wind
             arr_ret = dep_ret + dur_ret
 
+            # Assign sequential flight numbers for both legs (e.g. PCS0001 out, PCS0002 return).
             fn_out = f"PCS{fn_counter:04d}"
             fn_counter += 1
             fn_ret = f"PCS{fn_counter:04d}"
             fn_counter += 1
 
+            # The return distance FK may differ from outbound if the DB stored each
+            # direction separately; fall back to the outbound FK if not found.
             did_ret = dist_id.get(key_ret, did)
 
+            # Write both legs to the DB and append to the in-memory timetable list.
+            # The timetable list is returned and reused as a template for all 14 sim days.
             for fn, orig, dest, dep, arr, dur, d, d_id in [
                 (fn_out, hub,   spoke, slot_min, arr_out, dur_out, dist, did),
                 (fn_ret, spoke, hub,   dep_ret,  arr_ret, dur_ret, dist, did_ret),
             ]:
-                if arr > AIRPORT_CLOSE + 120:   # skip if returns well past midnight
+                # Drop any leg whose arrival would be more than 2 hours past the airport
+                # curfew (AIRPORT_CLOSE = 1500 min = 01:00 next day). Ultra-long returns
+                # from distant spokes can exceed this after turnaround time is added.
+                if arr > AIRPORT_CLOSE + 120:
                     continue
+
                 row_id = qexec(conn, """
                     INSERT INTO Sim_timetable
                         (flight_number, origin_iata, dest_iata, aircraft_id,
                          dep_time_min, arr_time_min, duration_min, distance_nm, dist_id)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, (fn, orig, dest, ac_id, dep, arr, dur, d, d_id))
+
+                # Keep a Python dict for each timetable row so simulate_day()
+                # can clone it without querying the DB again.
                 timetable.append({
                     "timetable_id": row_id,
                     "flight_number": fn,
@@ -319,6 +346,8 @@ def generate_timetable(conn, airports, dist_map, dist_id, hub_ac, aircraft):
                     "dist_id":  d_id,
                 })
 
+            # Advance the departure slot for the next spoke so hub departures
+            # are staggered by DEP_GAP minutes rather than all leaving at once.
             slot_min += DEP_GAP
 
     conn.commit()
@@ -333,19 +362,40 @@ def compute_demand(airports):
              * (metro_dest / sum_of_all_other_metros)
     """
     demand = {}
-    codes  = list(airports.keys())
+    codes  = list(airports.keys())  # IATA codes for all airports in the network
+
+    # Sum metro populations across all airports once so we can compute each
+    # airport's share of total network demand in a single pass.
     total_pop = sum(airports[c]["metro_pop"] for c in codes)
+
     for orig in codes:
-        pop_o    = airports[orig]["metro_pop"]
+        pop_o = airports[orig]["metro_pop"]  # origin metro population
+
+        # Denominator for the gravity weight: total population excluding the origin city.
+        # This ensures each destination's share sums to 1.0 across all destinations.
         sum_rest = total_pop - pop_o
+
+        # Total passengers that leave this origin per day across the whole network.
+        # DAILY_FLY_RATE (0.5%) = fraction of a metro that flies on any given day.
+        # MARKET_SHARE   (2%)   = fraction of those flyers that PCA captures.
         daily_pax = pop_o * DAILY_FLY_RATE * MARKET_SHARE
+
         for dest in codes:
             if dest == orig:
-                continue
-            pop_d = airports[dest]["metro_pop"]
+                continue  # a flight cannot originate and terminate at the same airport
+
+            pop_d = airports[dest]["metro_pop"]  # destination metro population
+
+            # Gravity model: allocate daily_pax proportionally to the destination's
+            # share of the remaining network population. Larger cities attract more
+            # passengers than smaller ones from the same origin.
             n = daily_pax * (pop_d / sum_rest)
+
+            # Ignore city pairs that generate fewer than half a passenger per day —
+            # too sparse to meaningfully affect the simulation and would slow BFS routing.
             if n >= 0.5:
                 demand[(orig, dest)] = n
+
     return demand
 
 # ── BFS passenger routing ─────────────────────────────────────────────────────
