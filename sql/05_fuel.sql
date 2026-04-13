@@ -1,6 +1,4 @@
 -- ================================================
--- Graham McCabe 
--- CSC-4810
 -- 05_fuel.sql
 -- Defines fuel logging and summary tables for
 -- Panther Cloud Air flight operations.

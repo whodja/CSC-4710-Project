@@ -1,6 +1,4 @@
 -- ================================================
--- Graham McCabe 
--- CSC-4810
 -- 02_airports.sql
 -- Defines and populates the Airports table for
 -- Panther Cloud Air's 30-airport US network.

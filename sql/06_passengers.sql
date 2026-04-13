@@ -1,6 +1,4 @@
 -- ================================================
--- Graham McCabe 
--- CSC-4810
 -- 06_passengers.sql
 -- Defines passenger and booking tables for
 -- Panther Cloud Air.
