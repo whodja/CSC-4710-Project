@@ -1,4 +1,5 @@
 # ================================================
+# Graham McCabe
 # docker-compose.yml — Panther Cloud Air
 # Defines two services:
 #   mariadb  — MariaDB 10.11 database server
@@ -11,17 +12,15 @@
 
 services:
 
-  # ── Database service ──────────────────────────────────────────
+  # Database service
   mariadb:
     image: mariadb:10.11
     container_name: mariadb-compose
     environment:
-      MYSQL_ROOT_PASSWORD: TheFutureUnemployed   # Root DB password
-      MYSQL_DATABASE: timetable                  # Database created on first run
+      MYSQL_ROOT_PASSWORD: TheFutureUnemployed   
+      MYSQL_DATABASE: timetable                  
     volumes:
-      - project_data:/var/lib/mysql              # Named volume keeps data between restarts
-      # SQL init scripts are executed in filename order on first start.
-      # Each file creates and seeds one group of tables.
+      - project_data:/var/lib/mysql       
       - ./sql/01_aircraft.sql:/docker-entrypoint-initdb.d/01_aircraft.sql
       - ./sql/02_airports.sql:/docker-entrypoint-initdb.d/02_airports.sql
       - ./sql/03_flight_distances.sql:/docker-entrypoint-initdb.d/03_flight_distances.sql
@@ -31,7 +30,7 @@ services:
       - ./sql/07_pricing.sql:/docker-entrypoint-initdb.d/07_pricing.sql
       - ./sql/08_users.sql:/docker-entrypoint-initdb.d/08_users.sql
     ports:
-      - "3306:3306"                              # Expose DB port to host for local tools
+      - "3306:3306"                              
     networks:
       - mariadb_network
     healthcheck:
@@ -41,7 +40,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Web / API service ─────────────────────────────────────────
+  #Web / API service 
   web:
     build: .                                     # Build image from local Dockerfile
     container_name: flask-web
@@ -58,7 +57,7 @@ services:
     networks:
       - mariadb_network
 
-# ── Shared resources ──────────────────────────────────────────
+# Shared resources
 networks:
   mariadb_network:
     driver: bridge                               # Isolated bridge network for the two services
