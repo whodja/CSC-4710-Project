@@ -222,22 +222,6 @@ def _make_ref():
 def api_create_booking():
     """
     Record a passenger booking in the Passengers table.
-
-    Request body (JSON):
-        {
-          "first_name":      "John",
-          "last_name":       "Doe",
-          "email":           "john@example.com",
-          "dob":             "1990-01-15",       (optional, defaults to 2000-01-01)
-          "seat_class":      "economy",           (economy | business | first)
-          "total_price_usd": 312.00
-        }
-
-    Success response (HTTP 200):
-        { "ok": true, "booking_ref": "PCA-A3X7K" }
-
-    Failure response (HTTP 400):
-        { "ok": false, "error": "Missing field: email" }
     """
     body     = request.get_json(silent=True) or {}
     required = ("first_name", "last_name", "email", "seat_class", "total_price_usd")
