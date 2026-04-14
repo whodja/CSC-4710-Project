@@ -344,10 +344,10 @@ def bearing(orig, dest):
     y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
     return math.degrees(math.atan2(x, y)) % 360
 
-def jet_stream_factor(brg_deg, eastward_bonus=0.12):
+def jet_stream_factor(bearing_degrees, eastward_bonus=0.12):
     """Day-7 jet stream: east +12% speed (shorter duration), west -12% speed."""
-    rad = math.radians(brg_deg)
-    return 1.0 - math.sin(rad) * eastward_bonus
+    bearing_radians = math.radians(bearing_degrees)
+    return 1.0 - math.sin(bearing_radians) * eastward_bonus
 
 # ── Load reference data ────────────────────────────────────────────────────────
 def load_airports(conn):
@@ -385,41 +385,41 @@ def load_distances(conn):
         JOIN Airports d ON fd.destination_id = d.airport_id
         WHERE fd.is_active = TRUE
     """)
-    dist_map, dist_id = {}, {}
-    for r in rows:
-        key = (r["orig"], r["dest"])
-        dist_map[key] = r["distance_nm"]
-        dist_id[key]  = r["id"]
-    return dist_map, dist_id
+    distance_map, distance_id_map = {}, {}
+    for row in rows:
+        route_key = (row["orig"], row["dest"])
+        distance_map[route_key]    = row["distance_nm"]
+        distance_id_map[route_key] = row["id"]
+    return distance_map, distance_id_map
 
 def load_pricing(conn):
     """Return a dict of seat_class -> {base, per_nm, margin} from Pricing_rules."""
-    rules  = qall(conn, "SELECT seat_class, base_price_usd, price_per_nm FROM Pricing_rules")
-    cfg    = qone(conn, "SELECT config_value FROM System_config WHERE config_key='profit_margin'")
-    margin = float(cfg["config_value"]) if cfg else 0.0
+    fare_rules     = qall(conn, "SELECT seat_class, base_price_usd, price_per_nm FROM Pricing_rules")
+    margin_config  = qone(conn, "SELECT config_value FROM System_config WHERE config_key='profit_margin'")
+    profit_margin  = float(margin_config["config_value"]) if margin_config else 0.0
     pricing = {}
-    for r in rules:
-        pricing[r["seat_class"]] = {
-            "base":   float(r["base_price_usd"]),
-            "per_nm": float(r["price_per_nm"]),
-            "margin": margin,
+    for rule in fare_rules:
+        pricing[rule["seat_class"]] = {
+            "base":   float(rule["base_price_usd"]),
+            "per_nm": float(rule["price_per_nm"]),
+            "margin": profit_margin,
         }
     return pricing
 
 def calc_fare(seat_class, dist_nm, pricing):
     """Calculate ticket price: (base + per_nm * distance) * (1 + margin%)."""
-    p = pricing[seat_class]
-    return round((p["base"] + p["per_nm"] * dist_nm) * (1 + p["margin"] / 100), 2)
+    fare_rule = pricing[seat_class]
+    return round((fare_rule["base"] + fare_rule["per_nm"] * dist_nm) * (1 + fare_rule["margin"] / 100), 2)
 
 # ── Build timetable from static flights ───────────────────────────────────────
-def build_timetable_from_static(conn, aircraft_by_tail, dist_map, dist_id):
+def build_timetable_from_static(conn, aircraft_by_tail, distance_map, distance_id_map):
     """
     Convert STATIC_FLIGHTS into Sim_timetable rows and return a list of
     timetable dicts for use as the daily template in simulate_day().
 
     Each STATIC_FLIGHTS entry is matched to:
       - An aircraft_id via aircraft_by_tail (tail number -> DB record)
-      - A dist_nm and dist_id via dist_map / dist_id (origin, dest -> DB record)
+      - A dist_nm and dist_id via distance_map / distance_id_map (origin, dest -> DB record)
 
     Flights whose tail or route are not found in the DB are skipped.
     (This silently drops the JFK-CDG international flight if CDG is not
@@ -432,45 +432,46 @@ def build_timetable_from_static(conn, aircraft_by_tail, dist_map, dist_id):
     timetable = []
     skipped   = 0
 
-    for f in STATIC_FLIGHTS:
+    for flight in STATIC_FLIGHTS:
         # Resolve tail number to DB aircraft record
-        ac = aircraft_by_tail.get(f["tail"])
-        if ac is None:
+        aircraft_record = aircraft_by_tail.get(flight["tail"])
+        if aircraft_record is None:
             skipped += 1
             continue
 
         # Resolve route to distance record
-        key = (f["frm"], f["to"])
-        if key not in dist_map:
+        route_key = (flight["frm"], flight["to"])
+        if route_key not in distance_map:
             skipped += 1
             continue
 
-        dep_min = hhmm(f["dep"])
-        arr_min = hhmm(f["arr"])
-        if arr_min < dep_min:       # overnight arrival — add one day
-            arr_min += 1440
-        dur_min = arr_min - dep_min
+        departure_minutes = hhmm(flight["dep"])
+        arrival_minutes   = hhmm(flight["arr"])
+        if arrival_minutes < departure_minutes:   # overnight arrival — add one day
+            arrival_minutes += 1440
+        duration_minutes = arrival_minutes - departure_minutes
 
-        row_id = qexec(conn, """
+        timetable_row_id = qexec(conn, """
             INSERT INTO Sim_timetable
                 (flight_number, origin_iata, dest_iata, aircraft_id,
                  dep_time_min, arr_time_min, duration_min, distance_nm, dist_id)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (f["num"], f["frm"], f["to"], ac["aircraft_id"],
-              dep_min, arr_min, dur_min, dist_map[key], dist_id[key]))
+        """, (flight["num"], flight["frm"], flight["to"], aircraft_record["aircraft_id"],
+              departure_minutes, arrival_minutes, duration_minutes,
+              distance_map[route_key], distance_id_map[route_key]))
 
         timetable.append({
-            "timetable_id":  row_id,
-            "flight_number": f["num"],
-            "origin":        f["frm"],
-            "dest":          f["to"],
-            "aircraft_id":   ac["aircraft_id"],
-            "dep_min":       dep_min,
-            "arr_min":       arr_min,
-            "dur_min":       dur_min,
-            "dist_nm":       dist_map[key],
-            "dist_id":       dist_id[key],
-            "seats":         f["seats"],
+            "timetable_id":  timetable_row_id,
+            "flight_number": flight["num"],
+            "origin":        flight["frm"],
+            "dest":          flight["to"],
+            "aircraft_id":   aircraft_record["aircraft_id"],
+            "dep_min":       departure_minutes,
+            "arr_min":       arrival_minutes,
+            "dur_min":       duration_minutes,
+            "dist_nm":       distance_map[route_key],
+            "dist_id":       distance_id_map[route_key],
+            "seats":         flight["seats"],
         })
 
     conn.commit()
@@ -484,85 +485,85 @@ def compute_demand(airports):
     Formula: metro_orig * DAILY_FLY_RATE * MARKET_SHARE
              * (metro_dest / sum_of_all_other_metros)
     """
-    demand = {}
-    codes  = list(airports.keys())
-    total_pop = sum(airports[c]["metro_pop"] for c in codes)
+    demand       = {}
+    airport_codes = list(airports.keys())
+    total_network_pop = sum(airports[code]["metro_pop"] for code in airport_codes)
 
-    for orig in codes:
-        pop_o    = airports[orig]["metro_pop"]
-        sum_rest = total_pop - pop_o
-        daily_pax = pop_o * DAILY_FLY_RATE * MARKET_SHARE
+    for origin in airport_codes:
+        origin_pop        = airports[origin]["metro_pop"]
+        other_metros_pop  = total_network_pop - origin_pop
+        daily_pax_from_origin = origin_pop * DAILY_FLY_RATE * MARKET_SHARE
 
-        for dest in codes:
-            if dest == orig:
+        for dest in airport_codes:
+            if dest == origin:
                 continue
-            pop_d = airports[dest]["metro_pop"]
-            n = daily_pax * (pop_d / sum_rest)
-            if n >= 0.5:
-                demand[(orig, dest)] = n
+            dest_pop          = airports[dest]["metro_pop"]
+            daily_passengers  = daily_pax_from_origin * (dest_pop / other_metros_pop)
+            if daily_passengers >= 0.5:
+                demand[(origin, dest)] = daily_passengers
 
     return demand
 
 # ── BFS passenger routing ─────────────────────────────────────────────────────
 def build_flight_index(instances):
     """
-    idx[(orig, dest)] = list of instance dicts sorted by dep_min.
+    flight_index[(origin, dest)] = list of instance dicts sorted by dep_min.
     Cancelled flights are excluded.
     """
-    idx = defaultdict(list)
-    for inst in instances:
-        if inst["status"] == "cancelled":
+    flight_index = defaultdict(list)
+    for instance in instances:
+        if instance["status"] == "cancelled":
             continue
-        idx[(inst["origin"], inst["dest"])].append(inst)
-    for key in idx:
-        idx[key].sort(key=lambda x: x["dep_min"])
-    return idx
+        flight_index[(instance["origin"], instance["dest"])].append(instance)
+    for route_key in flight_index:
+        flight_index[route_key].sort(key=lambda x: x["dep_min"])
+    return flight_index
 
-def _bfs(origin, dest, pref_min, flight_idx, seat_avail, min_conn, max_legs=3):
+def _bfs(origin, dest, earliest_departure, flight_index, seats_remaining, min_connection_minutes, max_legs=3):
     """
     BFS over the day's flight graph.
     Returns a list of instance_ids (the chosen legs) or [] if no path found.
     """
     if origin == dest:
         return []
-    queue   = deque([(0, origin, pref_min, [])])
+    queue   = deque([(0, origin, earliest_departure, [])])
     visited = {}
     while queue:
-        legs, cur, avail_min, path = queue.popleft()
-        if legs >= max_legs:
+        legs_used, current_airport, available_from, legs_taken = queue.popleft()
+        if legs_used >= max_legs:
             continue
-        key = (cur, avail_min // 90)
-        if key in visited and visited[key] <= legs:
+        visited_key = (current_airport, available_from // 90)
+        if visited_key in visited and visited[visited_key] <= legs_used:
             continue
-        visited[key] = legs
+        visited[visited_key] = legs_used
 
-        for inst in flight_idx.get((cur, dest), []):
-            if inst["dep_min"] >= avail_min and seat_avail.get(inst["instance_id"], 0) > 0:
-                return path + [inst["instance_id"]]
+        for candidate in flight_index.get((current_airport, dest), []):
+            if candidate["dep_min"] >= available_from and seats_remaining.get(candidate["instance_id"], 0) > 0:
+                return legs_taken + [candidate["instance_id"]]
 
-        candidates = HUBS + [a for a in COORDS if a not in HUBS and a != origin and a != dest]
-        for mid in candidates:
-            if mid == cur or mid == dest:
+        intermediate_airports = HUBS + [a for a in COORDS if a not in HUBS and a != origin and a != dest]
+        for via_airport in intermediate_airports:
+            if via_airport == current_airport or via_airport == dest:
                 continue
-            for inst in flight_idx.get((cur, mid), []):
-                if inst["dep_min"] >= avail_min and seat_avail.get(inst["instance_id"], 0) > 0:
-                    nxt = inst["arr_min"] + min_conn
-                    if nxt <= AIRPORT_CLOSE:
-                        queue.append((legs + 1, mid, nxt, path + [inst["instance_id"]]))
+            for candidate in flight_index.get((current_airport, via_airport), []):
+                if candidate["dep_min"] >= available_from and seats_remaining.get(candidate["instance_id"], 0) > 0:
+                    earliest_next = candidate["arr_min"] + min_connection_minutes
+                    if earliest_next <= AIRPORT_CLOSE:
+                        queue.append((legs_used + 1, via_airport, earliest_next, legs_taken + [candidate["instance_id"]]))
                     break
     return []
 
-def route_passenger(origin, dest, pref_min, flight_idx, seat_avail):
+def route_passenger(origin, dest, preferred_dep_minute, flight_index, seats_remaining):
     """
     Route a passenger with progressive fallback:
     1. BFS with 30-min min connection (standard)
     2. BFS with 15-min min connection (tight)
     3. BFS with 0-min connection from any time (last resort)
     """
-    for min_conn, start in [(MIN_CONN_MIN, pref_min), (15, pref_min), (0, FIRST_DEP)]:
-        result = _bfs(origin, dest, start, flight_idx, seat_avail, min_conn, max_legs=3)
-        if result:
-            return result
+    for min_connection, earliest_start in [(MIN_CONN_MIN, preferred_dep_minute), (15, preferred_dep_minute), (0, FIRST_DEP)]:
+        found_path = _bfs(origin, dest, earliest_start, flight_index, seats_remaining, min_connection, max_legs=3)
+        if found_path:
+            return found_path
     return []
 
 # ── Daily challenges ──────────────────────────────────────────────────────────
@@ -601,69 +602,69 @@ def apply_challenge(day, instances):
     For the AOG challenge the first aircraft found departing from the
     affected hub is grounded (all its flights for the day cancelled).
     """
-    desc, params = CHALLENGES[day]
+    description, challenge_params = CHALLENGES[day]
 
     delay_origins = []
-    if "delay_origin" in params:
-        delay_origins = [params["delay_origin"]]
-    if "delay_origins" in params:
-        delay_origins = params["delay_origins"]
-    delay_min = params.get("delay_min", 0)
+    if "delay_origin" in challenge_params:
+        delay_origins = [challenge_params["delay_origin"]]
+    if "delay_origins" in challenge_params:
+        delay_origins = challenge_params["delay_origins"]
+    delay_minutes = challenge_params.get("delay_min", 0)
 
-    for inst in instances:
+    for flight in instances:
         # Airport-specific delays
-        if delay_origins and inst["origin"] in delay_origins:
-            inst["dep_min"]      += delay_min
-            inst["arr_min"]      += delay_min
-            inst["delay_min"]    += delay_min
-            inst["delay_reason"]  = params.get("reason", "Delay")
+        if delay_origins and flight["origin"] in delay_origins:
+            flight["dep_min"]      += delay_minutes
+            flight["arr_min"]      += delay_minutes
+            flight["delay_min"]    += delay_minutes
+            flight["delay_reason"]  = challenge_params.get("reason", "Delay")
 
         # Jet stream (day 7) — east faster, west slower
-        if params.get("jet_stream"):
-            if inst["origin"] in COORDS and inst["dest"] in COORDS:
-                brg   = bearing(inst["origin"], inst["dest"])
-                jf    = jet_stream_factor(brg)
-                extra = int(inst["dur_min"] * abs(1.0 - jf))
-                if jf < 1.0:     # westbound — slower
-                    inst["arr_min"] += extra
-                    inst["dur_min"] += extra
-                else:             # eastbound — faster
-                    inst["arr_min"] -= extra
-                    inst["dur_min"] -= extra
-                inst["delay_reason"] = "Jet stream"
+        if challenge_params.get("jet_stream"):
+            if flight["origin"] in COORDS and flight["dest"] in COORDS:
+                compass_bearing = bearing(flight["origin"], flight["dest"])
+                speed_factor    = jet_stream_factor(compass_bearing)
+                time_adjustment = int(flight["dur_min"] * abs(1.0 - speed_factor))
+                if speed_factor < 1.0:   # westbound — slower
+                    flight["arr_min"] += time_adjustment
+                    flight["dur_min"] += time_adjustment
+                else:                     # eastbound — faster
+                    flight["arr_min"] -= time_adjustment
+                    flight["dur_min"] -= time_adjustment
+                flight["delay_reason"] = "Jet stream"
 
         # Westbound advisory (day 5)
-        if params.get("west_factor"):
-            if inst["origin"] in COORDS and inst["dest"] in COORDS:
-                brg = bearing(inst["origin"], inst["dest"])
-                if 180 < brg < 360:
-                    extra = int(inst["dur_min"] * (params["west_factor"] - 1.0))
-                    inst["arr_min"]    += extra
-                    inst["dur_min"]    += extra
-                    inst["delay_min"]  += extra
-                    inst["delay_reason"] = "Jet stream advisory"
+        if challenge_params.get("west_factor"):
+            if flight["origin"] in COORDS and flight["dest"] in COORDS:
+                compass_bearing = bearing(flight["origin"], flight["dest"])
+                if 180 < compass_bearing < 360:
+                    time_adjustment        = int(flight["dur_min"] * (challenge_params["west_factor"] - 1.0))
+                    flight["arr_min"]     += time_adjustment
+                    flight["dur_min"]     += time_adjustment
+                    flight["delay_min"]   += time_adjustment
+                    flight["delay_reason"] = "Jet stream advisory"
 
         # Western route cancellations (day 10)
-        if params.get("cancel_western"):
-            if inst["origin"] in WESTERN or inst["dest"] in WESTERN:
-                inst["status"]       = "cancelled"
-                inst["delay_reason"] = "Western route cancellation"
+        if challenge_params.get("cancel_western"):
+            if flight["origin"] in WESTERN or flight["dest"] in WESTERN:
+                flight["status"]       = "cancelled"
+                flight["delay_reason"] = "Western route cancellation"
 
     # AOG: find first aircraft departing from the affected hub and ground it
-    if "aog_hub" in params:
-        hub    = params["aog_hub"]
-        aog_id = None
-        for inst in instances:
-            if inst["origin"] == hub:
-                aog_id = inst["aircraft_id"]
+    if "aog_hub" in challenge_params:
+        affected_hub        = challenge_params["aog_hub"]
+        grounded_aircraft_id = None
+        for flight in instances:
+            if flight["origin"] == affected_hub:
+                grounded_aircraft_id = flight["aircraft_id"]
                 break
-        if aog_id:
-            for inst in instances:
-                if inst["aircraft_id"] == aog_id:
-                    inst["status"]       = "cancelled"
-                    inst["delay_reason"] = "Aircraft AOG"
+        if grounded_aircraft_id:
+            for flight in instances:
+                if flight["aircraft_id"] == grounded_aircraft_id:
+                    flight["status"]       = "cancelled"
+                    flight["delay_reason"] = "Aircraft AOG"
 
-    return desc
+    return description
 
 # ── Simulate one day ──────────────────────────────────────────────────────────
 def simulate_day(conn, day, timetable, airports, aircraft, pricing, demand):
@@ -682,22 +683,22 @@ def simulate_day(conn, day, timetable, airports, aircraft, pricing, demand):
 
     # ── Step 1: Clone timetable into mutable per-day instances ───────────────
     instances = []
-    for t in timetable:
+    for template in timetable:
         instances.append({
-            "timetable_id":       t["timetable_id"],
+            "timetable_id":       template["timetable_id"],
             "sim_day":            day,
             "flight_date":        flight_date,
-            "flight_number":      f"D{day:02d}{t['flight_number']}",
-            "origin":             t["origin"],
-            "dest":               t["dest"],
-            "aircraft_id":        t["aircraft_id"],
-            "tail_number":        aircraft[t["aircraft_id"]]["tail_number"],
-            "dep_min":            t["dep_min"],
-            "arr_min":            t["arr_min"],
-            "dur_min":            t["dur_min"],
-            "dist_nm":            t["dist_nm"],
-            "dist_id":            t["dist_id"],
-            "seats":              t["seats"],
+            "flight_number":      f"D{day:02d}{template['flight_number']}",
+            "origin":             template["origin"],
+            "dest":               template["dest"],
+            "aircraft_id":        template["aircraft_id"],
+            "tail_number":        aircraft[template["aircraft_id"]]["tail_number"],
+            "dep_min":            template["dep_min"],
+            "arr_min":            template["arr_min"],
+            "dur_min":            template["dur_min"],
+            "dist_nm":            template["dist_nm"],
+            "dist_id":            template["dist_id"],
+            "seats":              template["seats"],
             "status":             "scheduled",
             "delay_min":          0,
             "delay_reason":       None,
@@ -706,112 +707,112 @@ def simulate_day(conn, day, timetable, airports, aircraft, pricing, demand):
         })
 
     # ── Step 2: Apply today's operational challenge ───────────────────────────
-    challenge_desc = apply_challenge(day, instances)
+    challenge_description = apply_challenge(day, instances)
 
     # ── Step 3: Persist flight instances to the database ─────────────────────
-    for inst in instances:
-        base_dt   = datetime.datetime.combine(flight_date, datetime.time(0, 0))
-        sched_dep = base_dt + datetime.timedelta(minutes=inst["dep_min"])
-        sched_arr = base_dt + datetime.timedelta(minutes=inst["arr_min"])
-        actual_dep = sched_dep if inst["status"] != "cancelled" else None
-        actual_arr = sched_arr if inst["status"] != "cancelled" else None
+    for flight in instances:
+        midnight       = datetime.datetime.combine(flight_date, datetime.time(0, 0))
+        scheduled_dep  = midnight + datetime.timedelta(minutes=flight["dep_min"])
+        scheduled_arr  = midnight + datetime.timedelta(minutes=flight["arr_min"])
+        actual_dep     = scheduled_dep if flight["status"] != "cancelled" else None
+        actual_arr     = scheduled_arr if flight["status"] != "cancelled" else None
 
-        iid = qexec(conn, """
+        instance_db_id = qexec(conn, """
             INSERT INTO Sim_flight_instances
                 (timetable_id, sim_day, flight_date, flight_number,
                  origin_iata, dest_iata, aircraft_id, tail_number,
                  scheduled_dep, scheduled_arr, actual_dep, actual_arr,
                  status, delay_reason, delay_min, distance_nm)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (inst["timetable_id"], day, flight_date, inst["flight_number"],
-              inst["origin"], inst["dest"], inst["aircraft_id"], inst["tail_number"],
-              sched_dep, sched_arr, actual_dep, actual_arr,
-              inst["status"], inst["delay_reason"], inst["delay_min"], inst["dist_nm"]))
-        inst["instance_id"] = iid
+        """, (flight["timetable_id"], day, flight_date, flight["flight_number"],
+              flight["origin"], flight["dest"], flight["aircraft_id"], flight["tail_number"],
+              scheduled_dep, scheduled_arr, actual_dep, actual_arr,
+              flight["status"], flight["delay_reason"], flight["delay_min"], flight["dist_nm"]))
+        flight["instance_id"] = instance_db_id
 
     # ── Step 4a: Seat availability and flight index ───────────────────────────
-    seat_avail = {
-        inst["instance_id"]: inst["seats"]
-        for inst in instances
-        if inst["status"] != "cancelled"
+    seats_remaining = {
+        flight["instance_id"]: flight["seats"]
+        for flight in instances
+        if flight["status"] != "cancelled"
     }
-    flight_idx = build_flight_index(instances)
+    flight_index = build_flight_index(instances)
 
     # ── Step 4b: Generate demand and route each passenger ─────────────────────
-    total_pax = arrived = stranded = 0
-    revenue   = 0.0
+    total_passengers = arrived = stranded = 0
+    revenue          = 0.0
 
-    for (orig, dest), avg_n in demand.items():
-        n = max(1, round(avg_n + random.gauss(0, avg_n * 0.1)))
-        for _ in range(n):
-            pref_min   = random.randint(FIRST_DEP, AIRPORT_CLOSE - 120)
-            seat_class = random.choices(
+    for (origin, dest), expected_passengers in demand.items():
+        passenger_count = max(1, round(expected_passengers + random.gauss(0, expected_passengers * 0.1)))
+        for _ in range(passenger_count):
+            preferred_dep_minute = random.randint(FIRST_DEP, AIRPORT_CLOSE - 120)
+            seat_class           = random.choices(
                 ["economy", "business", "first"], weights=[80, 15, 5]
             )[0]
 
-            iid_path   = route_passenger(orig, dest, pref_min, flight_idx, seat_avail)
-            total_fare = sum(
-                calc_fare(seat_class, next(i for i in instances if i["instance_id"] == iid)["dist_nm"], pricing)
-                for iid in iid_path
+            booked_flight_ids = route_passenger(origin, dest, preferred_dep_minute, flight_index, seats_remaining)
+            trip_fare         = sum(
+                calc_fare(seat_class, next(f for f in instances if f["instance_id"] == leg_id)["dist_nm"], pricing)
+                for leg_id in booked_flight_ids
             )
 
-            total_pax += 1
-            if iid_path:
-                arrived  += 1
-                revenue  += total_fare
+            total_passengers += 1
+            if booked_flight_ids:
+                arrived += 1
+                revenue += trip_fare
             else:
                 stranded += 1
 
-            status = "arrived" if iid_path else "stranded"
-            pid = qexec(conn, """
+            passenger_status = "arrived" if booked_flight_ids else "stranded"
+            passenger_db_id  = qexec(conn, """
                 INSERT INTO Sim_passengers
                     (sim_day, origin_iata, dest_iata, preferred_dep_min,
                      status, seat_class, fare_paid)
                 VALUES (%s,%s,%s,%s,%s,%s,%s)
-            """, (day, orig, dest, pref_min, status, seat_class, round(total_fare, 2)))
+            """, (day, origin, dest, preferred_dep_minute, passenger_status, seat_class, round(trip_fare, 2)))
 
-            for leg_num, iid in enumerate(iid_path, 1):
-                inst_match = next(i for i in instances if i["instance_id"] == iid)
-                base_dt    = datetime.datetime.combine(flight_date, datetime.time(0, 0))
-                sdep = base_dt + datetime.timedelta(minutes=inst_match["dep_min"])
-                sarr = base_dt + datetime.timedelta(minutes=inst_match["arr_min"])
+            for leg_number, leg_id in enumerate(booked_flight_ids, 1):
+                booked_flight = next(f for f in instances if f["instance_id"] == leg_id)
+                midnight      = datetime.datetime.combine(flight_date, datetime.time(0, 0))
+                leg_dep_time  = midnight + datetime.timedelta(minutes=booked_flight["dep_min"])
+                leg_arr_time  = midnight + datetime.timedelta(minutes=booked_flight["arr_min"])
                 qexec(conn, """
                     INSERT INTO Sim_passenger_legs
                         (sim_passenger_id, leg_number, instance_id,
                          scheduled_dep, actual_dep, scheduled_arr, actual_arr, status)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,'booked')
-                """, (pid, leg_num, iid, sdep, sdep, sarr, sarr))
-                seat_avail[iid] = max(0, seat_avail[iid] - 1)
-                inst_match["passengers_boarded"] += 1
+                """, (passenger_db_id, leg_number, leg_id, leg_dep_time, leg_dep_time, leg_arr_time, leg_arr_time))
+                seats_remaining[leg_id] = max(0, seats_remaining[leg_id] - 1)
+                booked_flight["passengers_boarded"] += 1
 
-    for inst in instances:
-        if inst["instance_id"] and inst["passengers_boarded"] > 0:
+    for flight in instances:
+        if flight["instance_id"] and flight["passengers_boarded"] > 0:
             qexec(conn, """
                 UPDATE Sim_flight_instances SET passengers_boarded=%s WHERE instance_id=%s
-            """, (inst["passengers_boarded"], inst["instance_id"]))
+            """, (flight["passengers_boarded"], flight["instance_id"]))
 
     # ── Step 5: Compute operating costs ──────────────────────────────────────
     fuel_cost    = 0.0
     landing_fees = 0.0
     lease_cost   = sum(
-        float(aircraft[aid]["monthly_lease_usd"]) / 30
-        for aid in set(t["aircraft_id"] for t in timetable)
+        float(aircraft[aircraft_id]["monthly_lease_usd"]) / 30
+        for aircraft_id in set(template["aircraft_id"] for template in timetable)
     )
 
-    for inst in instances:
-        if inst["status"] == "cancelled":
+    for flight in instances:
+        if flight["status"] == "cancelled":
             continue
-        ac = aircraft[inst["aircraft_id"]]
+        aircraft_specs = aircraft[flight["aircraft_id"]]
         # Fuel: burn rate (gal/min at cruise) × actual duration × price per gallon
-        fuel_cost    += float(ac["burn_rate_cruise"]) * inst["dur_min"] * FUEL_PRICE
+        fuel_cost    += float(aircraft_specs["burn_rate_cruise"]) * flight["dur_min"] * FUEL_PRICE
         landing_fees += LANDING_FEE
 
-    operated    = sum(1 for i in instances if i["status"] != "cancelled")
-    cancelled   = sum(1 for i in instances if i["status"] == "cancelled")
-    delayed     = sum(1 for i in instances if i["delay_min"] > 0 and i["status"] != "cancelled")
-    total_delay = sum(i["delay_min"] for i in instances)
-    op_cost     = fuel_cost + landing_fees + lease_cost
-    profit      = revenue - op_cost
+    flights_operated  = sum(1 for f in instances if f["status"] != "cancelled")
+    flights_cancelled = sum(1 for f in instances if f["status"] == "cancelled")
+    flights_delayed   = sum(1 for f in instances if f["delay_min"] > 0 and f["status"] != "cancelled")
+    total_delay_min   = sum(f["delay_min"] for f in instances)
+    operating_cost    = fuel_cost + landing_fees + lease_cost
+    profit            = revenue - operating_cost
 
     qexec(conn, """
         INSERT INTO Sim_daily_report
@@ -820,30 +821,39 @@ def simulate_day(conn, day, timetable, airports, aircraft, pricing, demand):
              total_delay_min, fuel_cost_usd, landing_fees_usd, lease_cost_usd,
              revenue_usd, operating_cost_usd, profit_loss_usd, challenge_description)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-    """, (day, flight_date, len(instances), operated, cancelled, delayed,
-          total_pax, total_delay, round(fuel_cost, 2), round(landing_fees, 2),
-          round(lease_cost, 2), round(revenue, 2), round(op_cost, 2),
-          round(profit, 2), challenge_desc))
+    """, (day, flight_date, len(instances), flights_operated, flights_cancelled, flights_delayed,
+          total_passengers, total_delay_min, round(fuel_cost, 2), round(landing_fees, 2),
+          round(lease_cost, 2), round(revenue, 2), round(operating_cost, 2),
+          round(profit, 2), challenge_description))
 
     conn.commit()
-    print(f"  Day {day:2d} [{flight_date}] | {challenge_desc[:50]}")
-    print(f"         Flights: {operated} op / {cancelled} canc / {delayed} delayed")
-    print(f"         Pax: {total_pax} total, {arrived} arrived, {stranded} stranded")
-    print(f"         Rev: ${revenue:,.0f}  OpCost: ${op_cost:,.0f}  P&L: ${profit:+,.0f}")
+    print(f"  Day {day:2d} [{flight_date}] | {challenge_description[:50]}")
+    print(f"         Flights: {flights_operated} op / {flights_cancelled} canc / {flights_delayed} delayed")
+    print(f"         Pax: {total_passengers} total, {arrived} arrived, {stranded} stranded")
+    print(f"         Rev: ${revenue:,.0f}  OpCost: ${operating_cost:,.0f}  P&L: ${profit:+,.0f}")
 
     return {
-        "fuel": fuel_cost, "landing": landing_fees, "lease": lease_cost,
-        "revenue": revenue, "op_cost": op_cost, "profit": profit,
-        "pax": total_pax, "arrived": arrived, "stranded": stranded,
-        "flights": len(instances), "operated": operated,
-        "cancelled": cancelled, "delayed": delayed, "delay_min": total_delay,
-        "dur_hrs": sum(i["dur_min"] for i in instances if i["status"] != "cancelled") / 60,
+        "fuel_cost":       fuel_cost,
+        "landing_fees":    landing_fees,
+        "lease_cost":      lease_cost,
+        "revenue":         revenue,
+        "operating_cost":  operating_cost,
+        "profit":          profit,
+        "total_passengers": total_passengers,
+        "arrived":         arrived,
+        "stranded":        stranded,
+        "total_flights":   len(instances),
+        "flights_operated": flights_operated,
+        "flights_cancelled": flights_cancelled,
+        "flights_delayed":  flights_delayed,
+        "total_delay_min":  total_delay_min,
+        "total_flight_hours": sum(f["dur_min"] for f in instances if f["status"] != "cancelled") / 60,
     }
 
 # ── Final report ──────────────────────────────────────────────────────────────
 def generate_final_report(conn, daily_totals):
     """Aggregate 14 daily result dicts and write a single summary to Sim_final_report."""
-    T = {k: sum(d[k] for d in daily_totals) for k in daily_totals[0]}
+    totals = {metric: sum(day_result[metric] for day_result in daily_totals) for metric in daily_totals[0]}
     qexec(conn, """
         INSERT INTO Sim_final_report
             (total_passengers, passengers_arrived, passengers_stranded,
@@ -852,30 +862,30 @@ def generate_final_report(conn, daily_totals):
              total_lease_cost_usd, total_operating_cost, total_revenue_usd,
              total_profit_loss_usd)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-    """, (T["pax"], T["arrived"], T["stranded"],
-          T["flights"], T["cancelled"], T["delayed"],
-          round(T["dur_hrs"], 2),
-          round(T["fuel"], 2), round(T["landing"], 2), round(T["lease"], 2),
-          round(T["op_cost"], 2), round(T["revenue"], 2), round(T["profit"], 2)))
+    """, (totals["total_passengers"], totals["arrived"], totals["stranded"],
+          totals["total_flights"], totals["flights_cancelled"], totals["flights_delayed"],
+          round(totals["total_flight_hours"], 2),
+          round(totals["fuel_cost"], 2), round(totals["landing_fees"], 2), round(totals["lease_cost"], 2),
+          round(totals["operating_cost"], 2), round(totals["revenue"], 2), round(totals["profit"], 2)))
     conn.commit()
 
     print("\n" + "=" * 60)
     print("  PANTHER CLOUD AIR – 14-DAY SIMULATION RESULTS")
     print("=" * 60)
-    print(f"  Total passengers:     {T['pax']:>10,}")
-    print(f"  Arrived:              {T['arrived']:>10,}")
-    print(f"  Stranded:             {T['stranded']:>10,}")
-    print(f"  Total flights:        {T['flights']:>10,}")
-    print(f"  Operated:             {T['flights'] - T['cancelled']:>10,}")
-    print(f"  Cancelled:            {T['cancelled']:>10,}")
-    print(f"  Delayed:              {T['delayed']:>10,}")
-    print(f"  Total flight hours:   {T['dur_hrs']:>10,.1f}")
-    print(f"  Fuel cost:            ${T['fuel']:>12,.2f}")
-    print(f"  Landing fees:         ${T['landing']:>12,.2f}")
-    print(f"  Lease cost:           ${T['lease']:>12,.2f}")
-    print(f"  Operating cost:       ${T['op_cost']:>12,.2f}")
-    print(f"  Revenue:              ${T['revenue']:>12,.2f}")
-    print(f"  Net P&L:              ${T['profit']:>+12,.2f}")
+    print(f"  Total passengers:     {totals['total_passengers']:>10,}")
+    print(f"  Arrived:              {totals['arrived']:>10,}")
+    print(f"  Stranded:             {totals['stranded']:>10,}")
+    print(f"  Total flights:        {totals['total_flights']:>10,}")
+    print(f"  Operated:             {totals['flights_operated']:>10,}")
+    print(f"  Cancelled:            {totals['flights_cancelled']:>10,}")
+    print(f"  Delayed:              {totals['flights_delayed']:>10,}")
+    print(f"  Total flight hours:   {totals['total_flight_hours']:>10,.1f}")
+    print(f"  Fuel cost:            ${totals['fuel_cost']:>12,.2f}")
+    print(f"  Landing fees:         ${totals['landing_fees']:>12,.2f}")
+    print(f"  Lease cost:           ${totals['lease_cost']:>12,.2f}")
+    print(f"  Operating cost:       ${totals['operating_cost']:>12,.2f}")
+    print(f"  Revenue:              ${totals['revenue']:>12,.2f}")
+    print(f"  Net P&L:              ${totals['profit']:>+12,.2f}")
     print("=" * 60)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -902,20 +912,20 @@ def main():
     conn.commit()
 
     # Load reference data
-    airports        = load_airports(conn)
-    aircraft_by_tail = load_aircraft(conn)
+    airports          = load_airports(conn)
+    aircraft_by_tail  = load_aircraft(conn)
     # Build an aircraft_id-keyed dict for simulate_day() lookups
-    aircraft_by_id  = {r["aircraft_id"]: r for r in aircraft_by_tail.values()}
-    dist_map, dist_id = load_distances(conn)
-    pricing         = load_pricing(conn)
-    demand          = compute_demand(airports)
+    aircraft_by_id    = {record["aircraft_id"]: record for record in aircraft_by_tail.values()}
+    distance_map, distance_id_map = load_distances(conn)
+    pricing           = load_pricing(conn)
+    demand            = compute_demand(airports)
 
     print(f"Airports: {len(airports)}  |  Aircraft: {len(aircraft_by_tail)}  "
-          f"|  Routes in DB: {len(dist_map)}  |  OD pairs: {len(demand)}")
+          f"|  Routes in DB: {len(distance_map)}  |  OD pairs: {len(demand)}")
 
     # Build timetable from the static schedule (mirrors aircraft_schedule.js)
     print("\nLoading timetable from static schedule…")
-    timetable = build_timetable_from_static(conn, aircraft_by_tail, dist_map, dist_id)
+    timetable = build_timetable_from_static(conn, aircraft_by_tail, distance_map, distance_id_map)
 
     print("\nRunning 14-day simulation…")
     daily = []

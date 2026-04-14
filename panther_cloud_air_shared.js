@@ -277,26 +277,26 @@ function areTooClose(airportA, airportB) {
    "sf-from" and "sf-to" (schedule filter dropdowns) get a leading "All" option
    so the user can filter by just one end of a route. */
 function fillRouteDropdowns() {
-  var codes = [], seen = {};
-  FLIGHTS.forEach(function(flight) {
-    if (!seen[flight.from]) { seen[flight.from] = 1; codes.push(flight.from); }
-    if (!seen[flight.to])   { seen[flight.to]   = 1; codes.push(flight.to);   }
-  });
-  codes.sort();
+  // Collect every IATA code that appears as an origin or destination, deduplicate with Set, sort A-Z
+  var codes = Array.from(new Set(FLIGHTS.flatMap(function(f){ return [f.from, f.to]; }))).sort();
+
+  // Build one <option> per airport; append city name from CITY map if available (e.g. "ATL - Atlanta")
   var opts = codes.map(function(code) {
     return '<option value="' + code + '">' + code + (CITY[code] ? ' - ' + CITY[code] : '') + '</option>';
   }).join('');
+
+  // Inject the same option list into booking, employee, and admin dropdowns
   ['b-from', 'b-to', 'e-from', 'e-to', 'mf-from', 'mf-to'].forEach(function(id) {
     var el = document.getElementById(id); if (el) el.innerHTML = opts;
   });
-  // Schedule filter selects get an extra "All" option at the top
-  var schedOpts = '<option value="">All</option>' + codes.map(function(code) {
-    return '<option value="' + code + '">' + code + '</option>';
-  }).join('');
+
+  // Schedule filter dropdowns get a leading "All" option so users can filter by one airport only
+  var schedOpts = '<option value="">All</option>' + opts;
   ['sf-from', 'sf-to'].forEach(function(id) {
     var el = document.getElementById(id); if (el) el.innerHTML = schedOpts;
   });
-  // Default destination to the second airport so origin ≠ destination on load
+
+  // Default b-to to the second airport so origin and destination are different on page load
   var destSelect = document.getElementById('b-to');
   if (destSelect && destSelect.options.length > 1) destSelect.selectedIndex = 1;
 }
