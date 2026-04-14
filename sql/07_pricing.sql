@@ -1,4 +1,5 @@
 -- ================================================
+-- Graham McCabe
 -- 07_pricing.sql
 -- Defines pricing rules and calculated ticket
 -- prices for Panther Cloud Air.
@@ -6,8 +7,6 @@
 -- Tables:
 --   Pricing_rules  - Admin-defined base pricing per seat class
 --   Ticket_prices  - Calculated prices per flight (runtime)
---
--- Note: profit_margin is stored in System_config (05_fuel.sql)
 --
 -- ================================================
 
@@ -18,10 +17,6 @@ DROP TABLE IF EXISTS Pricing_rules;
 -- Pricing_rules
 -- Stores base pricing per seat class.
 -- Set by admin via the UI.
---
--- base_price_usd: starting price before distance
--- price_per_nm: additional cost per nautical mile
--- Profit margin is pulled from System_config.
 -- ------------------------------------------------
 CREATE TABLE Pricing_rules (
     pricing_id      INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -55,8 +50,6 @@ CREATE TABLE Ticket_prices (
 
 -- ------------------------------------------------
 -- Seed Data: Pricing_rules
--- Default pricing per seat class.
--- Admin can update these via the UI.
 -- ------------------------------------------------
 INSERT INTO Pricing_rules (seat_class, base_price_usd, price_per_nm)
 VALUES

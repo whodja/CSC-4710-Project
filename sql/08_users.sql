@@ -1,4 +1,5 @@
 -- ================================================
+-- Graham McCabe
 -- 08_users.sql
 -- Defines system users for Panther Airs.
 --
@@ -13,10 +14,6 @@ DROP TABLE IF EXISTS Users;
 -- ------------------------------------------------
 -- Users
 -- Stores all registered system users.
---
--- username:  Unique login identifier
--- password:  Hashed password (bcrypt recommended)
--- user_type: Role restricted to 'Admin' or 'Employee'
 -- ------------------------------------------------
 CREATE TABLE Users (
     id          INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -32,9 +29,6 @@ CREATE TABLE Users (
 -- Plaintext credentials (for reference only — never stored):
 --   Admin user:    username=admin    password=Admin@PCA1
 --   Employee user: username=employee password=Employee@PCA1
---
--- INSERT IGNORE is used so re-running the init scripts never
--- causes a duplicate-key error.
 -- ------------------------------------------------
 INSERT IGNORE INTO Users (username, password, user_type) VALUES
     ('admin',

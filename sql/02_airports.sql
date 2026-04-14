@@ -1,17 +1,11 @@
 -- ================================================
+-- Graham McCabe
 -- 02_airports.sql
 -- Defines and populates the Airports table for
 -- Panther Cloud Air's 30-airport US network.
 --
 -- Tables:
 --   Airports - All operating airports
---
--- Notes:
---   is_hub = TRUE  -> connection hub (11 gates, used as routing center)
---   is_hub = FALSE -> spoke airport (1-5 gates, scaled to metro_pop)
---   metro_pop: MSA population used for demand calculations in simulate.py
---   150-mile proximity pairs share metro_pop values and have no service
---     between them (enforced in app logic / aircraft_schedule.js, not here)
 -- ================================================
 
 DROP TABLE IF EXISTS Airports;
@@ -19,9 +13,6 @@ DROP TABLE IF EXISTS Airports;
 -- ------------------------------------------------
 -- Airports
 -- Each airport in the PCA network.
--- metro_pop drives demand volume between city pairs.
--- is_hub controls route assignment in simulate.py.
--- gates_available caps simultaneous departures per airport.
 -- ------------------------------------------------
 CREATE TABLE Airports (
     airport_id      INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -37,9 +28,7 @@ CREATE TABLE Airports (
 
 -- ------------------------------------------------
 -- Seed Data: Hub Airports (is_hub=TRUE, 11 gates)
--- ATL, DFW, DEN, ORD serve as the four routing
--- hubs. Every spoke-to-spoke route connects through
--- at least one hub per the project specification.
+-- ATL, DFW, DEN, ORD serve as the four routing hubs
 -- ------------------------------------------------
 INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
 ('ATL', 'Hartsfield-Jackson Atlanta International', 'Atlanta',  'Georgia',  'America/New_York',  6411000, TRUE, 11),
@@ -49,11 +38,6 @@ INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop,
 
 -- ------------------------------------------------
 -- Seed Data: Northeast / Mid-Atlantic Spoke Airports
--- JFK + EWR + LGA share the NY MSA (metro_pop 19.5M).
--- DCA + BWI + IAD share the DC MSA (metro_pop 6.39M).
--- Proximity rule: JFK<->EWR, JFK<->LGA, EWR<->LGA,
---                 EWR<->PHL, LGA<->PHL, DCA<->BWI,
---                 DCA<->IAD, BWI<->IAD — no service.
 -- ------------------------------------------------
 INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
 ('JFK', 'John F. Kennedy International',      'New York',     'New York',             'America/New_York', 19500000, FALSE, 5),
@@ -69,8 +53,6 @@ INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop,
 
 -- ------------------------------------------------
 -- Seed Data: Southeast / Florida Spoke Airports
--- FLL and MIA share the Miami MSA (metro_pop 6.18M).
--- MCO<->TPA are within 150 mi — no service between them.
 -- ------------------------------------------------
 INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
 ('MIA', 'Miami International',                        'Miami',           'Florida',        'America/New_York', 6183000, FALSE, 5),
@@ -81,8 +63,6 @@ INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop,
 
 -- ------------------------------------------------
 -- Seed Data: South / Southwest Spoke Airports
--- AUS<->IAH are within 150 mi — no service between them.
--- PHX uses America/Phoenix (no DST observed).
 -- ------------------------------------------------
 INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
 ('IAH', 'George Bush Intercontinental',         'Houston',   'Texas',    'America/Chicago',    7122000, FALSE, 5),
@@ -91,9 +71,7 @@ INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop,
 ('LAS', 'Harry Reid International',              'Las Vegas', 'Nevada',   'America/Los_Angeles',2265000, FALSE, 2);
 
 -- ------------------------------------------------
--- Seed Data: West Coast Spoke Airports
--- LAX<->SAN are within 150 mi — no service between them.
--- PDX<->SEA are within 150 mi — no service between them.
+-- Seed Data: West Coast Airports
 -- ------------------------------------------------
 INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
 ('LAX', 'Los Angeles International',    'Los Angeles',   'California', 'America/Los_Angeles', 13200000, FALSE, 5),
@@ -103,9 +81,7 @@ INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop,
 ('PDX', 'Portland International',       'Portland',      'Oregon',     'America/Los_Angeles',  2512000, FALSE, 3);
 
 -- ------------------------------------------------
--- Seed Data: Mountain / Pacific Spoke Airports
--- SLC: single gate — smallest metro in the network.
--- HNL: requires long-haul A350 service from DEN hub.
+-- Seed Data: Mountain / Pacific Airports.
 -- ------------------------------------------------
 INSERT INTO Airports (iata_code, airport_name, city, state, timezone, metro_pop, is_hub, gates_available) VALUES
 ('SLC', 'Salt Lake City International', 'Salt Lake City', 'Utah',   'America/Denver',   1257000, FALSE, 1),

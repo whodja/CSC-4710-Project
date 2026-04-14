@@ -1,5 +1,6 @@
 -- ================================================
 -- 06_passengers.sql
+-- Graham McCabe
 -- Defines passenger and booking tables for
 -- Panther Cloud Air.
 --
@@ -15,8 +16,6 @@ DROP TABLE IF EXISTS Passengers;
 -- ------------------------------------------------
 -- Passengers
 -- Stores personal information for each passenger.
--- One record per person regardless of how many
--- flights they have booked.
 -- ------------------------------------------------
 CREATE TABLE Passengers (
     passenger_id    INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -32,9 +31,6 @@ CREATE TABLE Passengers (
 -- Bookings
 -- Stores flight reservations for each passenger.
 -- A passenger can have many bookings.
--- booking_ref is a human-readable reference code.
--- booking_status: confirmed, cancelled, completed
--- seat_class: economy, business, first
 -- ------------------------------------------------
 CREATE TABLE Bookings (
     booking_id      INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
