@@ -43,10 +43,8 @@
 <body>
 
 <!-- ── Light / Dark theme toggle ────────────────────────────────────
-     Fixed to top-right so it is always reachable.
-     The checkbox's onchange calls setTheme() from shared.js, which toggles
-     the "light" class on <body> and persists the choice in localStorage so the
-     preference survives page reloads and navigation to other pages. -->
+     This code creates a theme switch that stays in the top-right corner, changes the page theme when clicked, 
+     and saves the user's preference so it stays the same across pages. Function is sttored in shared.js  -->
 <div style="position:fixed;top:12px;right:14px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);z-index:10">
   <span>Light</span>
   <label class="theme-sw">
