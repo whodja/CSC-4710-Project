@@ -1,18 +1,10 @@
 """
+Graham McCabe
 app.py — Panther Cloud Air — Flask REST API
 ============================================
 Serves the front-end static files and exposes REST endpoints that read/write
 the MariaDB database managed by db.py.
 
-PROJECT OVERVIEW
-────────────────
-Panther Cloud Air (PCA) is a simulated regional airline.  This Flask app is the
-backend: it authenticates staff, serves all HTML/JS/CSS assets, and provides
-JSON data that the browser-side JS consumes for every data-driven feature.
-
-Because the heavy lifting (simulation engine, P&L tables, schedule graph) runs
-entirely in the browser (aircraft_schedule.js + admin.html JS), most of these
-endpoints are read-only lookups or simple INSERTs.
 
 ENDPOINTS
 ─────────
@@ -26,19 +18,6 @@ POST /api/login                 Authenticate username + bcrypt password
 POST /api/bookings              Record a passenger booking (upsert passenger row)
 GET  /api/bookings/<ref>        Echo back a booking reference (decorative lookup)
 
-CORS POLICY
-───────────
-All responses include Access-Control-Allow-* headers set to "*" so the page
-can be opened as a local file:// (development / demo) while still reaching the
-Flask server on localhost:5000 or 5001.
-
-DATABASE
-────────
-MariaDB, schema "timetable".  Managed by db.py via PyMySQL with DictCursor
-so all rows come back as dicts (column_name → value).
-Connection details come from environment variables (see db.py).
-Docker Compose injects those variables; local development can set them manually
-or rely on the db.py defaults.
 """
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -51,15 +30,13 @@ import string
 app = Flask(__name__)
 
 
-# ── CORS helper ───────────────────────────────────────────────────────────────
+# CORS helper
 @app.after_request
 def add_cors_headers(response):
     """
     Attach CORS headers to every response so the front-end can reach the API
     regardless of how the HTML files are served (localhost, Docker, or file://).
-    The permissive '*' origin is intentional — this is an academic project with
-    no sensitive data, and restricting to a specific origin would complicate the
-    demo setup.
+    The permissive '*' origin is intentional. 
     """
     response.headers["Access-Control-Allow-Origin"]  = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
@@ -67,7 +44,7 @@ def add_cors_headers(response):
     return response
 
 
-# ── Static front-end file serving ────────────────────────────────────────────
+# front-end file serving
 @app.route("/")
 def index():
     """Serve the login page as the application root."""
@@ -78,15 +55,6 @@ def index():
 def serve_static(filename):
     """
     Serve any .html, .js, or .css file that lives in the project root directory.
-    This single route covers all pages:
-      login.html, airports.html, schedule.html, coverage.html,
-      book.html, employee.html, admin.html,
-      panther_cloud_air_shared.js, aircraft_schedule.js,
-      panther_cloud_air.css, etc.
-
-    Security note: only flat filenames (no '/' in path) with the three allowed
-    extensions are served.  This prevents directory traversal attacks while
-    keeping the routing dead simple.
     """
     allowed = ('.html', '.js', '.css')
     if '/' not in filename and any(filename.endswith(ext) for ext in allowed):
@@ -94,23 +62,12 @@ def serve_static(filename):
     return "Not found", 404
 
 
-# ── GET /api/airports ─────────────────────────────────────────────────────────
+# GET /api/airports 
 @app.route("/api/airports")
 def api_airports():
     """
     Return the full PCA airport network ordered by metro population (highest first).
 
-    Used by:
-      - airports.html  — builds the airport network table
-      - shared.js loadAirports() — populates AIRPORTS, CITY, HUBS globals in the browser
-      - schedule.html, book.html, employee.html — need the city-name lookup map
-
-    Each record contains:
-      airport_id, iata_code, airport_name, city, state, timezone,
-      metro_pop (integer), is_hub (0/1 → bool), gates_available
-
-    is_hub is stored as TINYINT in MariaDB; it is converted to a Python bool
-    before serialisation so the browser receives true/false rather than 0/1.
     """
     conn = get_connection()
     try:
@@ -137,22 +94,11 @@ def api_airports():
         conn.close()
 
 
-# ── GET /api/aircraft ─────────────────────────────────────────────────────────
+# GET /api/aircraft
 @app.route("/api/aircraft")
 def api_aircraft():
     """
     Return the full fleet joined with aircraft model specifications.
-
-    Used by:
-      - admin.html Fleet tab (buildFleetModelStats) — groups by model_name
-        to show count, total seats, and daily lease cost per aircraft model.
-
-    The JOIN brings together two tables:
-      Aircraft       — individual tail numbers with operational status
-      Aircraft_models — shared specifications per model (seats, speed, lease, etc.)
-
-    All Decimal fields (cruise speed, range, lease cost, burn rate) are cast to
-    float so Python's json.dumps can serialise them (Decimal is not JSON-serialisable).
     """
     conn = get_connection()
     try:
@@ -188,21 +134,11 @@ def api_aircraft():
         conn.close()
 
 
-# ── GET /api/pricing ──────────────────────────────────────────────────────────
+# GET /api/pricing
 @app.route("/api/pricing")
 def api_pricing():
     """
     Return cabin pricing rules from the Pricing_rules table.
-
-    The table stores the DB-side fare parameters (base_price_usd + price_per_nm)
-    set up by 07_pricing.sql.  In practice the browser uses getCpm() from
-    localStorage for all live fare calculations, but this endpoint lets the
-    admin Pricing tab confirm the DB-side rules are loaded and display the
-    source of truth.
-
-    Order: economy → business → first (using FIELD() for explicit sort).
-    Fallback: if the table is empty (e.g. schema not yet seeded), returns
-    hard-coded defaults so the front-end never receives an empty array.
     """
     conn = get_connection()
     try:
@@ -227,18 +163,11 @@ def api_pricing():
         conn.close()
 
 
-# ── GET /api/config ───────────────────────────────────────────────────────────
+# GET /api/config
 @app.route("/api/config")
 def api_config():
     """
     Return all System_config rows as a flat key→value dict.
-
-    System_config (defined in 05_fuel.sql) holds simulation-wide admin settings:
-      profit_margin      — target profit margin percentage (currently informational)
-      fuel_price_per_gal — jet fuel price in USD/gallon (used by simulate.py)
-      taxi_time_min      — average taxi time in minutes per movement
-
-    Example response: { "profit_margin": 0.0, "fuel_price_per_gal": 6.19 }
     """
     conn = get_connection()
     try:
@@ -251,28 +180,11 @@ def api_config():
         conn.close()
 
 
-# ── POST /api/login ───────────────────────────────────────────────────────────
+# POST /api/login
 @app.route("/api/login", methods=["POST"])
 def api_login():
     """
     Authenticate a user against the Users table.
-
-    Request body (JSON):
-        { "username": "alice", "password": "secret" }
-
-    Success response (HTTP 200):
-        { "ok": true, "username": "alice", "user_type": "Admin" }
-
-    Failure responses:
-        HTTP 400  { "ok": false, "error": "Username and password required" }
-        HTTP 401  { "ok": false, "error": "Invalid credentials" }
-
-    Passwords are stored as bcrypt hashes (seeded by seed_users.py using
-    werkzeug.security.generate_password_hash).  check_password_hash handles
-    the bcrypt comparison securely.
-
-    The returned user_type ("Admin" or "Employee") drives role-based navigation
-    in the browser: Admin → admin.html, Employee → employee.html.
     """
     body     = request.get_json(silent=True) or {}
     username = body.get("username", "").strip()
@@ -296,12 +208,10 @@ def api_login():
         conn.close()
 
 
-# ── POST /api/bookings ────────────────────────────────────────────────────────
+# POST /api/bookings
 def _make_ref():
     """
     Generate a booking reference code in the format PCA-XXXXX.
-    Uses 5 random uppercase letters/digits for ~60 million unique combinations —
-    sufficient for a demo / academic system.
     Example output: PCA-A3X7K
     """
     chars = string.ascii_uppercase + string.digits
@@ -328,18 +238,6 @@ def api_create_booking():
 
     Failure response (HTTP 400):
         { "ok": false, "error": "Missing field: email" }
-
-    Implementation notes:
-      - An ON DUPLICATE KEY UPDATE is used on the email column so re-booking
-        with the same email address updates the passenger record rather than
-        raising a duplicate-key error.
-      - The flight_id FK is NOT populated because the scheduled flights live in
-        the static aircraft_schedule.js array rather than the Flights DB table.
-        Linking the two would require either syncing the static data to the DB
-        (out of scope) or removing the FK constraint.
-      - The booking_ref is generated in Python and returned to the browser for
-        display on the confirmation screen.  It is not persisted to the DB in
-        this version (the Passengers table does not have a booking_ref column).
     """
     body     = request.get_json(silent=True) or {}
     required = ("first_name", "last_name", "email", "seat_class", "total_price_usd")
@@ -353,7 +251,7 @@ def api_create_booking():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            # Upsert: insert new passenger or update name/DOB if email already exists
+            # insert new passenger or update name/DOB if email already exists
             cur.execute("""
                 INSERT INTO Passengers (first_name, last_name, email, date_of_birth)
                 VALUES (%s, %s, %s, %s)
@@ -372,16 +270,10 @@ def api_create_booking():
 def api_get_booking(ref):
     """
     Echo back a booking reference for the confirmation screen.
-
-    In the current implementation the browser generates the reference itself
-    (from _make_ref() via the POST response) and only needs the lookup to
-    normalise the casing.  A future version would query a Bookings table here.
     """
     return jsonify({"ok": True, "booking_ref": ref.upper()})
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# Entry point
 if __name__ == "__main__":
-    # debug=True enables auto-reload on code changes and the Werkzeug debugger.
-    # host="0.0.0.0" makes Flask reachable from outside the container (Docker networking).
     app.run(host="0.0.0.0", port=5000, debug=True)

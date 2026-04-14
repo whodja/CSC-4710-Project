@@ -1,4 +1,5 @@
 -- ================================================
+-- Graham McCabe
 -- 01_aircraft.sql
 -- Defines aircraft model specifications and
 -- individual aircraft registered in the

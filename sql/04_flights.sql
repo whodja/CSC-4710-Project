@@ -1,4 +1,5 @@
 -- ================================================
+-- Graham McCabe
 -- 04_flights.sql
 -- Defines flight operations and turnaround time
 -- tracking for Panther Cloud Air.
@@ -44,16 +45,6 @@ CREATE TABLE Flights (
 -- ------------------------------------------------
 -- Turnaround_time
 -- Tracks ground time breakdown for each flight
--- based on Panther Cloud Air turnaround standards.
---
--- Standard times (minutes):
---   Disembark passengers : 15 (always)
---   Clean & change crew  : 10 (always)
---   Board passengers     : 15 (always)
---   Door close           : 15 (always)
---   Refueling            : +10 (only if needed)
---   Minimum ground time  : 55 (no refuel)
---                          65 (with refuel)
 -- ------------------------------------------------
 CREATE TABLE Turnaround_time (
     turnaround_id       INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,

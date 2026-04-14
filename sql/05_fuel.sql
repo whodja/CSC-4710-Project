@@ -1,4 +1,5 @@
 -- ================================================
+-- Graham McCabe
 -- 05_fuel.sql
 -- Defines fuel logging and summary tables for
 -- Panther Cloud Air flight operations.
@@ -16,8 +17,6 @@ DROP TABLE IF EXISTS System_config;
 -- ------------------------------------------------
 -- System_config
 -- Stores admin-controlled simulation-wide settings.
--- Fuel price and taxi time are set here.
--- profit_margin is a percentage (e.g. 15.00 = 15%)
 -- ------------------------------------------------
 CREATE TABLE System_config (
     config_id       INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -30,12 +29,6 @@ CREATE TABLE System_config (
 -- Flight_fuel_logs
 -- Tracks fuel burn for each phase of a flight.
 -- One record per phase per flight.
---
--- Phases: taxi_out, takeoff, ascent_low, ascent_high,
---         cruise, descent_high, descent_low, landing,
---         taxi_in
--- duration_min: how long the phase lasted
--- fuel_burned_gal: burn_rate * duration_min
 -- ------------------------------------------------
 CREATE TABLE Flight_fuel_logs (
     fuel_log_id         INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -59,7 +52,6 @@ CREATE TABLE Flight_fuel_logs (
 --
 -- total_fuel_burned_gal: sum of all phase burns
 -- fuel_cost_usd: total_fuel_burned * fuel_price_per_gal
--- reserve_fuel_gal: 10% of total burned (FAA requirement)
 -- total_fuel_loaded_gal: burned + reserve
 -- ------------------------------------------------
 CREATE TABLE Flight_fuel_summary (
@@ -77,9 +69,6 @@ CREATE TABLE Flight_fuel_summary (
 -- ------------------------------------------------
 -- Seed Data: System_config
 -- Default simulation settings.
--- Fuel price based on 2024 US average jet fuel.
--- Taxi time in minutes (applied to taxi_out/taxi_in).
--- Profit margin defaults to 0 until admin sets it.
 -- ------------------------------------------------
 INSERT INTO System_config (config_key, config_value) VALUES
     ('profit_margin',       0.00);

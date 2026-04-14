@@ -1,13 +1,11 @@
 -- ================================================
+-- Graham McCabe
 -- 03_flight_distances.sql
 -- Defines and populates flight distances between
 -- all Panther Cloud Air operating airports.
 --
 -- Tables:
 --   FlightDistances - Point to point distances in NM
---
--- Note: Origin/destination reference Airports by
---       airport_id via iata_code lookup.
 -- ================================================
 
 DROP TABLE IF EXISTS Flight_distances;
@@ -26,19 +24,6 @@ CREATE TABLE Flight_distances (
 -- ------------------------------------------------
 -- Seed Data: Flight_distances
 -- All point-to-point distances in nautical miles.
---
--- Each row is one directional leg: (origin -> destination).
--- Both directions of every route are inserted so that outbound
--- and return flights each have their own FK row.
---
--- Organisation: distances are grouped by destination airport,
--- covering all 30 other airports that can reach it.
--- The sub-SELECT pattern resolves IATA codes to airport_ids at
--- insert time, so this script is order-independent relative to
--- the row order in 02_airports.sql.
---
--- is_active defaults to TRUE; set FALSE to disable a route
--- without deleting the historical distance record.
 -- ------------------------------------------------
 INSERT INTO Flight_distances (origin_id, destination_id, distance_nm) VALUES
 ((SELECT airport_id FROM Airports WHERE iata_code = 'DFW'), (SELECT airport_id FROM Airports WHERE iata_code = 'ATL'), 636),
