@@ -1,6 +1,6 @@
 """
 Graham McCabe
-app.py — Panther Cloud Air — Flask REST API
+app.py — Flask API
 ============================================
 Serves the front-end static files and exposes REST endpoints that read/write
 the MariaDB database managed by db.py.
@@ -149,12 +149,6 @@ def api_pricing():
                 ORDER BY FIELD(seat_class, 'economy', 'business', 'first')
             """)
             rows = cur.fetchall()
-        if not rows:
-            rows = [
-                {"seat_class": "economy",  "base_price_usd": 49.00,  "price_per_nm": 0.115},
-                {"seat_class": "business", "base_price_usd": 107.80, "price_per_nm": 0.253},
-                {"seat_class": "first",    "base_price_usd": 196.00, "price_per_nm": 0.460},
-            ]
         for r in rows:
             r["base_price_usd"] = float(r["base_price_usd"])
             r["price_per_nm"]   = float(r["price_per_nm"])
@@ -229,7 +223,7 @@ def api_create_booking():
         if not body.get(field):
             return jsonify({"ok": False, "error": f"Missing field: {field}"}), 400
 
-    dob = body.get("dob", "2000-01-01")   # date-of-birth is optional in the booking form
+    dob = body.get("dob", "2000-01-01")   # date-of-birth is optional in the booking form PLEASE FIX HERE NOT NULL
     ref = _make_ref()
 
     conn = get_connection()
