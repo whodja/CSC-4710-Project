@@ -16,7 +16,6 @@ DROP TABLE IF EXISTS Pricing_rules;
 -- ------------------------------------------------
 -- Pricing_rules
 -- Stores base pricing per seat class.
--- Set by admin via the UI.
 -- ------------------------------------------------
 CREATE TABLE Pricing_rules (
     pricing_id      INTEGER         NOT NULL AUTO_INCREMENT PRIMARY KEY,
