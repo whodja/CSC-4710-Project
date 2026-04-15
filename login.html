@@ -99,24 +99,12 @@
 <script>
 'use strict';
 
-/* submitLogin()
-   ─────────────
-   Reads the username and password fields, validates they are non-empty,
-   then POSTs to the Flask /api/login endpoint.
 
-   Success path (HTTP 200 + data.ok === true):
-     _saveSessionAndRedirect(username, user_type) stores credentials in sessionStorage
-     and redirects: Admin → admin.html, Employee → employee.html.
-
-   Failure path (HTTP 401 + data.ok === false):
-     The error message returned by the API (e.g. "Invalid credentials.") is
-     displayed in #login-err.
-
-   Network / DB offline path (fetch throws):
-     An "Unable to reach the server" message is shown. There is intentionally
-     no demo bypass — the database must be running to log in.
-     If you need to demo without a DB, run the Docker stack: `docker compose up`. */
-function submitLogin() {
+function submitLogin() { //This function:
+//Reads username + password
+//Checks if fields are empty
+//Sends login request to server
+//Handles success or failure
   var u = document.getElementById('lu').value.trim();
   var p = document.getElementById('lp').value.trim();
   var errEl = document.getElementById('login-err');
@@ -129,7 +117,8 @@ function submitLogin() {
   }
   errEl.style.display = 'none';
 
-  fetch(API_BASE + '/api/login', {
+  fetch(API_BASE + '/api/login', { // Reads the username and password fields, validates they are non-empty,
+   //then POSTs to the Flask /api/login endpoint.
     method:  'POST',
     headers: {'Content-Type': 'application/json'},
     body:    JSON.stringify({username: u, password: p})
@@ -152,9 +141,7 @@ function submitLogin() {
   });
 }
 
-/* Immediately-invoked init
-   ─────────────────────────
-   Runs the moment the page loads.
+/* Runs the moment the page loads.
    1. Applies the stored light/dark theme preference via applyTheme().
    2. Checks sessionStorage for an active session; if one exists the user is
       redirected to their portal immediately — they never see the login form. */
