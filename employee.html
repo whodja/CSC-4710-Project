@@ -176,7 +176,8 @@ function renderBusiestRoutes() {
   var routesByKey = {}; //store grouped routes - flights with same route can be grouped together 
   FLIGHTS.forEach(function(flight){ //loops through each flight 
     var key = flight.from + '-' + flight.to; //creates a route key
-    if (!routesByKey[key]) routesByKey[key] = {from:flight.from, to:flight.to, n:0, pax:0, seats:0}; //checks if that route has already been created in the object    routesByKey[key].n++; routesByKey[key].pax += flight.pax; routesByKey[key].seats += flight.seats;
+    if (!routesByKey[key]) routesByKey[key] = {from:flight.from, to:flight.to, n:0, pax:0, seats:0}; //checks if that route has already been created in the object    
+    routesByKey[key].n++; routesByKey[key].pax += flight.pax; routesByKey[key].seats += flight.seats;
   });
   var sorted = Object.values(routesByKey).sort(function(a,b){ return b.pax - a.pax; }).slice(0, 6); // busiest grouped object into an array and sorts it, then only top 6 busiest
 
