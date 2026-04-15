@@ -146,15 +146,17 @@
    Renders the first 10 flights from FLIGHTS with hard-coded simulated statuses.
    Delayed flights are highlighted in warning color; Boarding gets a purple badge. */
 function renderLiveTracker() {
+//hard-coded status array to simulate real-time flight updates for the prototype.
   var statuses = ['On Time','On Time','Delayed +12m','On Time','Boarding','On Time','On Time','Delayed +8m','On Time','On Time'];
   var html = '';
-  for (var i = 0; i < 10 && i < FLIGHTS.length; i++) {
+  for (var i = 0; i < 10 && i < FLIGHTS.length; i++) { //begins looping through flights (only first 10)
     var flight = FLIGHTS[i];
     var statusLabel = statuses[i];
-    var statusBadge = statusLabel.indexOf('Delayed') >= 0
+    var statusBadge = statusLabel.indexOf('Delayed') >= 0 //shows color of type of status for plane
       ? '<span class="badge b-warn">' + statusLabel + '</span>'
       : statusLabel === 'Boarding' ? '<span class="badge b-v">Boarding</span>'
       : '<span class="badge b-ok">On Time</span>';
+      //rows are being created dynamically from the flight data.
     html += '<tr><td><span class="mn" style="color:var(--lav)">' + flight.num + '</span></td>' +
             '<td style="font-size:10px;color:var(--dim)">' + flight.tail + '</td>' +
             '<td>' + flight.from + ' to ' + flight.to + '</td>' +
@@ -163,40 +165,40 @@ function renderLiveTracker() {
             '<td>' + flight.arr + '</td><td>' + flight.seats + '</td><td>' + flight.pax + '</td>' +
             '<td>' + statusBadge + '</td></tr>';
   }
-  document.getElementById('live-body').innerHTML = html;
-}
+  document.getElementById('live-body').innerHTML = html; //finished rows into live body table
+}//
 
 /* renderBusiestRoutes()
    Aggregates FLIGHTS by route key (from-to), sorts by total passengers descending,
    and renders the top 6 routes in the "Busiest Routes Today" table.
    Load factor < 30% shows a warning badge. */
 function renderBusiestRoutes() {
-  var routesByKey = {};
-  FLIGHTS.forEach(function(flight){
-    var key = flight.from + '-' + flight.to;
-    if (!routesByKey[key]) routesByKey[key] = {from:flight.from, to:flight.to, n:0, pax:0, seats:0};
-    routesByKey[key].n++; routesByKey[key].pax += flight.pax; routesByKey[key].seats += flight.seats;
+  var routesByKey = {}; //store grouped routes - flights with same route can be grouped together 
+  FLIGHTS.forEach(function(flight){ //loops through each flight 
+    var key = flight.from + '-' + flight.to; //creates a route key
+    if (!routesByKey[key]) routesByKey[key] = {from:flight.from, to:flight.to, n:0, pax:0, seats:0}; //checks if that route has already been created in the object    routesByKey[key].n++; routesByKey[key].pax += flight.pax; routesByKey[key].seats += flight.seats;
   });
-  var sorted = Object.values(routesByKey).sort(function(a,b){ return b.pax - a.pax; }).slice(0, 6);
+  var sorted = Object.values(routesByKey).sort(function(a,b){ return b.pax - a.pax; }).slice(0, 6); // busiest grouped object into an array and sorts it, then only top 6 busiest
+
   var html = '';
   sorted.forEach(function(route){
-    var loadFactor = Math.round(route.pax / route.seats * 100);
-    var barColor   = loadFactor > 30 ? 'var(--ok)' : 'var(--warn)';
+    var loadFactor = Math.round(route.pax / route.seats * 100); //calculate how busy each route is
+    var barColor   = loadFactor > 30 ? 'var(--ok)' : 'var(--warn)'; //bar color
     html += '<tr><td>' + route.from + ' to ' + route.to + '</td><td>' + route.n + '</td>';
     html += '<td>' + loadFactor + '%<div class="bar"><div class="bf" style="width:' + loadFactor + '%;background:' + barColor + '"></div></div></td>';
     html += '<td>' + (loadFactor > 30 ? '<span class="badge b-ok">Good</span>' : '<span class="badge b-warn">Low</span>') + '</td></tr>';
   });
-  document.getElementById('busy-routes').innerHTML = html;
+  document.getElementById('busy-routes').innerHTML = html; //inserting rows into table
 }
 
-/* init() — page startup: theme, auth, nav, load airports, populate selects, build both panels */
-async function init() {
+// page startup: theme, auth, nav, load airports, populate selects, build both panels 
+async function init() { //if using fetchAirports() it takes time, and await makes the code wait until that airport data is loaded.
   applyTheme();
   var auth = checkAuth();
   if (!auth) return;
   initNavBar(auth);
   await fetchAirports();
-  fillRouteDropdowns();   // fills #e-from and #e-to
+  fillRouteDropdowns();   
   renderLiveTracker();
   renderBusiestRoutes();
 }
