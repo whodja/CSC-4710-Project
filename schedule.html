@@ -1,6 +1,3 @@
-
-
-
 <!DOCTYPE html>
 <!-- schedule.html — Panther Cloud Air Daily Flight Schedule
      ═══════════════════════════════════════════════════════════
@@ -114,18 +111,17 @@
 <script>
 'use strict';
 
-// renderSchedule(flightList)
-   //Renders the schedule table from a flight array.
-  // Calculates load factor (pax/seats) and draws a small progress bar per row;
-  // bars under 30% are highlighted in yellow to flag under-loaded flights. 
+/* renderSchedule(flightList)
+   Renders the schedule table from a flight array.
+   Calculates load factor (pax/seats) and draws a small progress bar per row;
+   bars under 30% are highlighted in yellow to flag under-loaded flights. */
 function renderSchedule(flightList) {
-  document.getElementById('sched-sub').textContent = flightList.length + ' flights today'; //Shows how many flights exist
+  document.getElementById('sched-sub').textContent = flightList.length + ' flights today';
   var html = '';
-  flightList.forEach(function(f){ //Loops through each flight
-    var pct = Math.round(f.pax / f.seats * 100); //Caluclating how full the plane is 
+  flightList.forEach(function(f){
+    var pct = Math.round(f.pax / f.seats * 100);
     html += '<tr>';
     html += '<td><span class="mn" style="color:var(--lav)">' + f.num + '</span></td>';
-       
     // City names come from the CITY lookup map in aircraft_schedule.js
     html += '<td><strong>' + f.from + '</strong><br><span style="font-size:10px;color:var(--dim)">' + (CITY[f.from] || '') + '</span></td>';
     html += '<td><strong>' + f.to + '</strong><br><span style="font-size:10px;color:var(--dim)">' + (CITY[f.to] || '') + '</span></td>';
@@ -139,42 +135,46 @@ function renderSchedule(flightList) {
     html += '<td><button class="btn bg2 sm" data-fr="' + f.from + '" data-to="' + f.to + '" onclick="bookRoute(this.dataset.fr,this.dataset.to)">Book</button></td>';
     html += '</tr>';
   });
-  document.getElementById('sched-body').innerHTML = html; //load factor that puts flights into table 
+  document.getElementById('sched-body').innerHTML = html;
 }
 
-//applyFilters() — reads the three filter dropdowns and passes the filtered FLIGHTS subset to renderSchedule(). 
-//Empty selection means "no filter for that field". 
+/* applyFilters() — reads the three filter dropdowns and passes the filtered
+   FLIGHTS subset to renderSchedule(). Empty selection means "no filter for that field". */
 function applyFilters() {
   var fr = document.getElementById('sf-from').value;
   var to = document.getElementById('sf-to').value;
   var ty = document.getElementById('sf-type').value;
-  renderSchedule(FLIGHTS.filter(function(f){ //sends filtered selections to renderschedule() 
-    return (!fr || f.from === fr) && (!to || f.to === to) && (!ty || f.type === ty); //orgin selected, match only to that. no orgin, show all.
+  renderSchedule(FLIGHTS.filter(function(f){
+    return (!fr || f.from === fr) && (!to || f.to === to) && (!ty || f.type === ty);
   }));
 }
 
-// clearFilters() — clears all three filters and re-renders the full schedule 
+/* clearFilters() — clears all three filters and re-renders the full schedule */
 function clearFilters() {
   ['sf-from','sf-to','sf-type'].forEach(function(id){ document.getElementById(id).value = ''; });
-  renderSchedule(FLIGHTS); //resets dropdown to all
+  renderSchedule(FLIGHTS);
 }
 
-// bookRoute(originCode, destCode)
-  // Stores the selected route in sessionStorage so book.html can pre-fill the search form and immediately run a search on arrival. 
+/* bookRoute(originCode, destCode)
+   Stores the selected route in sessionStorage so book.html can pre-fill
+   the search form and immediately run a search on arrival. */
 function bookRoute(originCode, destCode) {
   sessionStorage.setItem('pca_qb_from', originCode);
   sessionStorage.setItem('pca_qb_to',   destCode);
   window.location.href = 'book.html';
+}
 
-
-
-async function init() { //when page loads but setuos up airport data
-  applyTheme(); 
-  var auth = checkAuth(); //is user logged in
+/* init() — page startup:
+   1. Restore theme, verify login, configure nav links
+   2. Load airport data for the filter dropdowns
+   3. Populate origin/dest selects, then render the full schedule */
+async function init() {
+  applyTheme();
+  var auth = checkAuth();
   if (!auth) return;
   initNavBar(auth);
-  await fetchAirports(); //loading data for airport dropdown
-  fillRouteDropdowns();   // fills from and to from shared.js
+  await fetchAirports();
+  fillRouteDropdowns();   // fills #sf-from and #sf-to from shared.js
   renderSchedule(FLIGHTS);
 }
 
